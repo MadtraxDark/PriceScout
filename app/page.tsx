@@ -8,8 +8,99 @@ export default function Home() {
   const [showPassword, setShowPassword] = useState(false);
   const [notice, setNotice] = useState("");
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isEmailLoading, setIsEmailLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [isOtpStep, setIsOtpStep] = useState(false);
+  const [isLinkSent, setIsLinkSent] = useState(false);
+  const [isPasswordResetStep, setIsPasswordResetStep] = useState(false);
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
+  const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isPasswordLoading, setIsPasswordLoading] = useState(false);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
-  function handleSubmit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setNotice("A autenticação será conectada ao Supabase nesta etapa."); }
+  function getConfiguredSupabase() {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) setNotice("Configure as variáveis do Supabase para ativar o login por e-mail.");
+    return supabase;
+  }
+  async function handlePasswordSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const supabase = getConfiguredSupabase();
+    if (!supabase) return;
+    setNotice("");
+    setIsPasswordLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    setIsPasswordLoading(false);
+    if (error) setNotice(`Não foi possível entrar com a senha: ${error.message}`);
+  }
+  async function sendMagicLink(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!email.trim()) {
+      setNotice("Digite seu e-mail para receber o código.");
+      return;
+    }
+    const supabase = getConfiguredSupabase();
+    if (!supabase) return;
+    setNotice("");
+    setIsEmailLoading(true);
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: { emailRedirectTo: `${window.location.origin}/` },
+    });
+    setIsEmailLoading(false);
+    if (error) {
+      setNotice(`Não foi possível enviar o código: ${error.message}`);
+      return;
+    }
+    setIsLinkSent(true);
+    setIsOtpStep(true);
+    setNotice("Link enviado. Verifique sua caixa de entrada e o spam.");
+  }
+  async function sendPasswordReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!email.trim()) {
+      setNotice("Digite seu e-mail para receber o link de recuperação.");
+      return;
+    }
+    const supabase = getConfiguredSupabase();
+    if (!supabase) return;
+    setNotice("");
+    setIsEmailLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/` });
+    setIsEmailLoading(false);
+    if (error) {
+      setNotice(`Não foi possível enviar o link de recuperação: ${error.message}`);
+      return;
+    }
+    setIsLinkSent(true);
+    setNotice("Link de recuperação enviado. Verifique sua caixa de entrada e o spam.");
+  }
+  async function updatePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (newPassword.length < 8) {
+      setNotice("A nova senha precisa ter pelo menos 8 caracteres.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setNotice("As senhas não conferem.");
+      return;
+    }
+    const supabase = getConfiguredSupabase();
+    if (!supabase) return;
+    setNotice("");
+    setIsPasswordLoading(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setIsPasswordLoading(false);
+    if (error) {
+      setNotice(`Não foi possível atualizar a senha: ${error.message}`);
+      return;
+    }
+    setNewPassword("");
+    setConfirmPassword("");
+    setIsRecoveryMode(false);
+    setNotice("Senha atualizada com sucesso.");
+  }
   async function handleGoogleLogin() {
     setNotice("");
     setIsGoogleLoading(true);
@@ -34,7 +125,10 @@ export default function Home() {
       if (session) window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
     };
     void supabase.auth.getSession().then(({ data }) => applySession(data.session));
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => applySession(session));
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") setIsRecoveryMode(true);
+      applySession(session);
+    });
     return () => authListener.subscription.unsubscribe();
   }, []);
   async function handleSignOut() {
@@ -53,13 +147,29 @@ export default function Home() {
     <section className="form-panel" id="top">
       <div className="mobile-brand"><ScoutMark /><span>Price<span>Scout</span></span></div>
       <div className="form-wrap">
-        {sessionEmail ? <div className="signed-in-state"><p className="overline">Login concluído</p><h2>Você está conectado.</h2><p>Sua conta PriceScout está pronta para acompanhar preços.</p><p className="signed-in-email">{sessionEmail}</p><button className="auth-button" type="button" onClick={handleSignOut}>Sair da conta</button></div> : <>
-        <div className="form-heading"><p className="overline">Bem-vindo de volta</p><h2>Acesse sua conta</h2><p>Continue acompanhando os preços que importam para você.</p></div>
-        <form onSubmit={handleSubmit}>
-          <label htmlFor="email">E-mail</label><input id="email" name="email" type="email" placeholder="voce@exemplo.com" autoComplete="email" required />
-          <div className="field-row"><label htmlFor="password">Senha</label><a href="#forgot" onClick={() => setNotice("O fluxo de recuperação de senha será conectado em breve.")}>Esqueci minha senha</a></div>
-          <div className="password-field"><input id="password" name="password" type={showPassword ? "text" : "password"} placeholder="Digite sua senha" autoComplete="current-password" required /><button type="button" className="icon-button" aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"} onClick={() => setShowPassword((visible) => !visible)}>{showPassword ? "Ocultar" : "Mostrar"}</button></div>
-          <button className="auth-button primary-button" type="submit">Entrar na conta</button>{notice && <p className="form-notice" role="status">{notice}</p>}
+        {isRecoveryMode ? <div className="magic-link-state">
+          <div className="form-heading"><p className="overline">Recuperação de senha</p><h2>Crie uma nova senha</h2><p>Escolha uma senha nova para continuar protegendo sua conta.</p></div>
+          <form onSubmit={updatePassword}>
+            <label htmlFor="new-password">Nova senha</label><input id="new-password" name="new-password" type="password" autoComplete="new-password" placeholder="Mínimo de 8 caracteres" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={8} required />
+            <label className="confirm-password-label" htmlFor="confirm-password">Confirmar nova senha</label><input id="confirm-password" name="confirm-password" type="password" autoComplete="new-password" placeholder="Digite a senha novamente" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} required />
+            <button className="auth-button primary-button" type="submit" disabled={isPasswordLoading}>{isPasswordLoading ? "Salvando senha..." : "Salvar nova senha"}</button>
+            {notice && <p className="form-notice" role="status">{notice}</p>}
+          </form>
+        </div> : isPasswordResetStep ? <div className="magic-link-state">
+          <div className="form-heading"><p className="overline">Recuperação de senha</p><h2>{isLinkSent ? "Confira seu e-mail" : "Recupere sua senha"}</h2><p>{isLinkSent ? <>Enviamos um link de recuperação para <strong>{email}</strong>.</> : "Informe seu e-mail e enviaremos um link para criar uma nova senha."}</p></div>
+          <form onSubmit={sendPasswordReset}>
+            <label htmlFor="reset-email">E-mail</label><input id="reset-email" name="reset-email" type="email" placeholder="voce@exemplo.com" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+            <button className="auth-button primary-button" type="submit" disabled={isEmailLoading}>{isEmailLoading ? "Enviando link..." : isLinkSent ? "Reenviar link" : "Enviar link de recuperação"}</button>
+            {notice && <p className="form-notice" role="status">{notice}</p>}
+          </form>
+          <div className="otp-actions"><button type="button" onClick={() => { setIsPasswordResetStep(false); setIsLinkSent(false); setNotice(""); }}>Voltar para o login</button></div>
+        </div> : sessionEmail ? <div className="signed-in-state"><p className="overline">Login concluído</p><h2>Você está conectado.</h2><p>Sua conta PriceScout está pronta para acompanhar preços.</p><p className="signed-in-email">{sessionEmail}</p>{notice && <p className="form-notice" role="status">{notice}</p>}<button className="auth-button" type="button" onClick={handleSignOut}>Sair da conta</button></div> : <>
+        {!isOtpStep && <><div className="form-heading"><p className="overline">Bem-vindo de volta</p><h2>Acesse sua conta</h2><p>Continue acompanhando os preços que importam para você.</p></div>
+        <form onSubmit={handlePasswordSubmit}>
+          <label htmlFor="email">E-mail</label><input id="email" name="email" type="email" placeholder="voce@exemplo.com" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+          <div className="field-row"><label htmlFor="password">Senha</label><a href="#forgot" onClick={(event) => { event.preventDefault(); setIsPasswordResetStep(true); setIsOtpStep(false); setIsLinkSent(false); setNotice(""); }}>Esqueci minha senha</a></div>
+          <div className="password-field"><input id="password" name="password" type={showPassword ? "text" : "password"} placeholder="Digite sua senha" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /><button type="button" className="icon-button" aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"} onClick={() => setShowPassword((visible) => !visible)}>{showPassword ? "Ocultar" : "Mostrar"}</button></div>
+          <button className="auth-button primary-button" type="submit" disabled={isPasswordLoading}>{isPasswordLoading ? "Entrando..." : "Entrar na conta"}</button>{notice && <p className="form-notice" role="status">{notice}</p>}
         </form>
         <div className="divider"><span>ou</span></div>
         <button className="auth-button gsi-material-button" type="button" onClick={handleGoogleLogin} disabled={isGoogleLoading}>
@@ -71,9 +181,18 @@ export default function Home() {
             <span className="gsi-material-button-contents">{isGoogleLoading ? "Conectando ao Google..." : "Continuar com Google"}</span>
           </span>
         </button>
-        <button className="auth-button secondary-button" type="button" onClick={() => setNotice("O acesso sem senha será conectado ao Supabase nesta etapa.")}>Entrar sem senha</button>
+        <button className="auth-button secondary-button" type="button" onClick={() => { setNotice(""); setIsOtpStep(true); }}>Entrar sem senha</button>
         <p className="create-account">Ainda não tem uma conta? <a href="#create" onClick={() => setNotice("O cadastro será disponibilizado em breve.")}>Criar conta</a></p><p className="privacy">Ao continuar, você concorda com os <a href="#terms">termos de uso</a> e a <a href="#privacy">política de privacidade</a> do PriceScout.</p>
-        </>}
+        </>}</>}
+        {isOtpStep && !sessionEmail && <div className="magic-link-state">
+          <div className="form-heading"><p className="overline">Acesso sem senha</p><h2>{isLinkSent ? "Confira seu e-mail" : "Entre sem senha"}</h2><p>{isLinkSent ? <>Enviamos um link de acesso para <strong>{email}</strong>.</> : "Informe seu e-mail e enviaremos um link único para entrar."}</p></div>
+          <form onSubmit={sendMagicLink}>
+            <label htmlFor="magic-link-email">E-mail</label><input id="magic-link-email" name="magic-link-email" type="email" placeholder="voce@exemplo.com" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+            <button className="auth-button primary-button" type="submit" disabled={isEmailLoading}>{isEmailLoading ? "Enviando link..." : isLinkSent ? "Reenviar link" : "Enviar link de acesso"}</button>
+            {notice && <p className="form-notice" role="status">{notice}</p>}
+          </form>
+          <div className="otp-actions"><button type="button" onClick={() => { setIsOtpStep(false); setIsLinkSent(false); setNotice(""); }}>Usar senha</button></div>
+        </div>}
       </div><footer className="form-footer"><a href="#help">Precisa de ajuda?</a><span>PriceScout © 2026</span></footer>
     </section>
   </main>;
