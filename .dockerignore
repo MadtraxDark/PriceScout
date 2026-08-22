@@ -1,0 +1,16 @@
+.git
+.gitignore
+.serena
+Dockerfile*
+docker-compose*.yml
+docker-compose*.yaml
+README.md
+*.log
+node_modules
+dist
+build
+coverage
+__pycache__
+*.py[cod]
+.venv
+venv

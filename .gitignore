@@ -34,3 +34,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# índices derivados da memória
+/memory/.index/
+/memory/.cache/
+
+# dados locais não versionáveis
+/memory/local/
