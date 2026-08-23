@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Entrar | PriceScout",
-  description: "Acesse sua conta PriceScout e acompanhe os melhores preços.",
+  title: "PriceScout Admin",
+  description: "Administre produtos, lojas e observações de preço do PriceScout.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

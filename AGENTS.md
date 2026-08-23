@@ -59,6 +59,14 @@ O PriceScout é uma memória persistente para agentes de IA. Markdown é a fonte
 - Qualquer índice em `memory/.index/` é derivado e não deve ser editado manualmente.
 - A recuperação deve começar pelo `memory/INDEX.md` e por busca textual antes de usar busca semântica.
 
+## Proibição de dados mockados
+
+- É estritamente proibido usar dados mockados, fictícios, de exemplo ou hardcoded para representar produtos, lojas, preços, métricas, alertas, atividades, usuários, datas ou estados operacionais.
+- Interfaces sem dados reais devem exibir estado vazio, estado de carregamento ou estado de configuração, identificando claramente a ausência de dados.
+- Placeholders não podem conter nomes, URLs, categorias ou valores que pareçam registros reais; use apenas instruções genéricas.
+- Dados de demonstração só podem existir em testes explicitamente isolados e identificados, nunca na aplicação, documentação operacional ou memória do projeto.
+- Antes de concluir qualquer alteração, procure e remova dados mockados da superfície afetada.
+
 ## Alterações
 
 - Mudanças em memória semântica e procedural devem ser pequenas, explicáveis e revisáveis.

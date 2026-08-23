@@ -39,6 +39,39 @@ Criar a página de login do PriceScout usando a página de login do Magazine Lui
 
 Conectar o login social do Google ao Supabase quando as variáveis públicas e o provedor estiverem configurados.
 
+## Dashboard administrativo PriceScout
+
+- [completed] Ler as skills stitch-design-taste, impeccable e frontend-design
+- [completed] Inspecionar a implementação atual e consultar documentação oficial atual do Next.js sobre CSS/App Router
+- [completed] Definir direção visual de cockpit de catálogo e registrar em DESIGN.md
+- [completed] Implementar visão geral, adição de produtos e adição de lojas
+- [completed] Validar lint, build e detector visual
+
+### Decisões
+
+- Manter App Router e CSS global já presentes, sem adicionar biblioteca de UI ou ícones.
+- Usar Manrope e DM Mono, marfim frio, deep ink e um único acento burnt orange.
+- Proteger a fonte canônica: os formulários informam que novos dados entram em revisão antes de alterar o catálogo.
+
+### Fontes consultadas
+
+- Next.js Docs, App Router CSS: https://nextjs.org/docs/app/getting-started/css
+- Next.js Docs, App Router: https://nextjs.org/docs/app
+
+### Ferramentas usadas
+
+- Skills locais: stitch-design-taste, impeccable, frontend-design.
+- Web: documentação oficial do Next.js.
+- Código local: app/page.tsx, app/globals.css, app/layout.tsx, DESIGN.md.
+
+### Validação final
+
+- `npm run build`: concluído com sucesso; rota `/` estática gerada.
+- `npm run lint`: 0 erros; 760 avisos preexistentes nos scripts locais de tooling.
+- Detector Impeccable: executado contra o projeto e retornou `[]`.
+- Verificação textual: nenhum emoji encontrado nos arquivos da superfície nova.
+- Limitação: não foi feita captura em navegador conectado porque o caminho do skill de browser listado nesta sessão não estava disponível; build e detector local permanecem válidos.
+
 ## Implementação de login sem senha por link mágico
 
 - [completed] Consultar documentação oficial atual de passwordless/OTP do Supabase
@@ -134,6 +167,44 @@ Conectar o login social do Google ao Supabase quando as variáveis públicas e o
 - [completed] Substituir o marcador textual pelo SVG oficial de quatro cores enviado pelo usuário
 - [completed] Adicionar markup de estado, wrapper e conteúdo no padrão Material do Google
 - [completed] Validar novamente lint e build
+
+## Remoção de dados mockados
+
+- [completed] Remover métricas, atividades, nomes, datas, status e identidade de usuário fictícios
+- [completed] Remover exemplos concretos dos placeholders e opções de categoria
+- [completed] Substituir a visão geral por estado vazio sem dados inventados
+- [completed] Registrar proibição estrita em AGENTS.md e DESIGN.md
+- [completed] Validar busca textual, lint e build
+
+### Decisão
+
+Enquanto a integração com a fonte oficial não estiver conectada, a interface não exibe nenhum registro, contador ou status operacional inventado. O formulário aceita dados digitados pelo usuário e informa que eles passam por revisão antes de alterar o catálogo canônico.
+
+## Cadastro de site por link
+
+- [completed] Renomear a opção de loja para “Adicionar site por link”
+- [completed] Tornar o campo de link explícito no formulário e exigir URL completa
+- [completed] Validar lint e build
+
+## Abas de registros cadastrados
+
+- [completed] Adicionar aba de produtos cadastrados
+- [completed] Adicionar aba de lojas cadastradas
+- [completed] Manter estados vazios sem dados mockados
+- [completed] Validar lint e build
+
+## Produto por link e despacho de scraper
+
+- [completed] Remover o nome manual do cadastro de produto
+- [completed] Detectar e normalizar a loja pelo hostname da URL
+- [completed] Derivar uma chave de scraper por domínio
+- [completed] Bloquear envio quando não houver scraper real registrado
+- [completed] Registrar a decisão arquitetural em docs/decisions/0003-product-link-and-scraper-dispatch.md
+- [completed] Validar lint e build
+
+### Limitação
+
+O repositório ainda não contém scrapers, Edge Functions, schema ou migrations. A interface reconhece o domínio, mas bloqueia o encaminhamento até uma implementação real ser registrada.
 - [completed] Unificar visualmente os três botões de ação no padrão Material do Google
 - [completed] Validar lint e build após a unificação visual
 - [completed] Corrigir processamento da sessão retornada pelo OAuth Google
