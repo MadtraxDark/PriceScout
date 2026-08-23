@@ -16,7 +16,15 @@ export async function GET() {
     console.error("Falha ao listar produtos do catálogo.");
     return NextResponse.json({ error: "Não foi possível carregar os produtos." }, { status: 500 });
   }
-  const products = (data ?? []).map((product) => ({ ...product, image_url: product.google_drive_file_id ? `/api/integrations/google-drive/image?fileId=${encodeURIComponent(product.google_drive_file_id)}` : null }));
+  const products = await Promise.all((data ?? []).map(async (product) => {
+    const { data: primary } = await supabase.from("google_drive_product_files").select("drive_file_id").eq("catalog_product_id", product.id).order("sort_order", { ascending: true }).limit(1).maybeSingle();
+    let driveFileId = product.google_drive_file_id;
+    if (primary?.drive_file_id) {
+      const { data: file } = await supabase.from("google_drive_files").select("drive_file_id").eq("id", primary.drive_file_id).maybeSingle();
+      driveFileId = file?.drive_file_id || driveFileId;
+    }
+    return { ...product, image_url: driveFileId ? `/api/integrations/google-drive/image?fileId=${encodeURIComponent(driveFileId)}` : null };
+  }));
   return NextResponse.json({ products });
 }
 
@@ -64,6 +72,9 @@ export async function POST(request: Request) {
     };
     const { data: product, error: productError } = await supabase.from("catalog_products").upsert(row, { onConflict: "source,external_product_id" }).select("*, store:catalog_stores(id,name,hostname,url)").single();
     if (productError || !product) throw productError || new Error("Não foi possível cadastrar o produto.");
+    await supabase.from("google_drive_product_files").update({ catalog_product_id: product.id }).eq("user_id", identity.user.id).eq("product_source", source).eq("external_product_id", externalProductId);
+    const { data: firstImage } = await supabase.from("google_drive_product_files").select("id").eq("catalog_product_id", product.id).order("sort_order", { ascending: true }).order("created_at", { ascending: true }).limit(1).maybeSingle();
+    if (firstImage && !product.primary_image_id) await supabase.from("catalog_products").update({ primary_image_id: firstImage.id }).eq("id", product.id);
     return NextResponse.json({ product, store }, { status: 200 });
   } catch (error) {
     console.error("Falha ao persistir produto e loja do catálogo.");

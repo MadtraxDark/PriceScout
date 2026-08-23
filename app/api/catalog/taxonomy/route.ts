@@ -30,6 +30,8 @@ export async function POST(request: Request) {
       p_taxonomy: taxonomy,
     });
     if (error) throw error;
+    const { data: product } = await supabase.from("catalog_products").select("id").eq("source", source).eq("external_product_id", productId).maybeSingle();
+    if (product) await supabase.from("product_category_assignments").update({ catalog_product_id: product.id }).eq("product_source", source).eq("external_product_id", productId);
     return NextResponse.json({ taxonomy: data ?? [] });
   } catch (error) {
     console.error("Falha ao persistir taxonomia do produto:", error);

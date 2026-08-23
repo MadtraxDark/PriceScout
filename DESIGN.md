@@ -47,3 +47,9 @@ Transições curtas para estados de operação e uma pulsação lenta apenas na 
 - Produtos cadastrados são representados como produto-base: o card exibe somente imagem, nome e a ação discreta de informações.
 - Loja, preço, disponibilidade e demais ofertas permanecem fora da listagem visual principal, preservando espaço para múltiplas ofertas futuras por produto.
 - A grade usa imagem real persistida quando disponível e estado explícito de imagem ausente quando não houver mídia confirmada.
+
+## Componentes compartilhados
+
+- `ImageViewer` recebe somente imagens normalizadas como `{ id, src, thumbnailSrc?, alt? }` e controla modal, foco, teclado, navegação, miniaturas, contador e estados de carregamento.
+- O componente não conhece produto, loja, scraper, KaBuM ou Google Drive. As telas devem fornecer URLs seguras já preparadas pelo backend.
+- `ImageWithState` concentra os estados visuais `loading`, `loaded` e `error` para manter o skeleton e o fallback de imagem consistentes.

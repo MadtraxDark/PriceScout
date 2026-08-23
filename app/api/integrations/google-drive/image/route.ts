@@ -21,7 +21,12 @@ export async function GET(request: Request) {
     const connection = await getDriveConnection(identity.user.id);
     const downloaded = await downloadDriveFile(connection, file.drive_file_id);
     return new NextResponse(new Uint8Array(downloaded.bytes), { headers: { "content-type": file.mime_type, "cache-control": "private, max-age=300" } });
-  } catch {
+  } catch (error) {
+    console.error("Falha ao servir imagem do Google Drive", {
+      userId: identity.user.id,
+      fileId,
+      message: error instanceof Error ? error.message : "Erro desconhecido",
+    });
     return new NextResponse("Não foi possível carregar a imagem do Google Drive.", { status: 502 });
   }
 }

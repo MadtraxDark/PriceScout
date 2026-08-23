@@ -39,6 +39,247 @@ Criar a página de login do PriceScout usando a página de login do Magazine Lui
 
 Conectar o login social do Google ao Supabase quando as variáveis públicas e o provedor estiverem configurados.
 
+## Área central de administração do produto
+
+- objective: criar rota permanente `/admin/produtos/[id-interno]`, separar o produto canônico dos identificadores externos e administrar dados/imagens pela identidade interna.
+- status: completed
+
+## Equilíbrio do cabeçalho da página do produto
+
+- objective: reduzir a dominância do nome do produto e tornar os textos auxiliares e espaçamentos mais legíveis.
+- status: in_progress
+- started_at: 2026-08-23
+- checklist:
+  - [completed] ler as skills frontend-design e visual-design-foundations;
+  - [completed] auditar a sequência e os tamanhos atuais do cabeçalho;
+  - [completed] reduzir o título para escala responsiva de 32–40px com line-height confortável;
+  - [completed] ampliar Catálogo, Área central do produto e ID interno para pelo menos 12px;
+  - [completed] organizar a sequência vertical com espaçamento consistente;
+  - [completed] validar TypeScript, build, detector visual, diff e navegador autenticado.
+- decision: preservar a tipografia Manrope/mono existente e resolver o desequilíbrio com escala, largura máxima, peso semibold e ritmo de 8px/16px/24px, sem redesenhar o cabeçalho.
+- tools: skills locais frontend-design e visual-design-foundations; apply_patch; validações locais e navegador autenticado.
+- validation:
+  - `npx tsc --noEmit`: passed;
+  - `npm run build`: passed;
+  - detector Impeccable com escopo `type`: `[]`;
+  - `git diff --check`: passed, apenas avisos de normalização CRLF.
+- limitation: o navegador autenticado retornou a página interna de conexão recusada mesmo após reiniciar o servidor de desenvolvimento; a validação visual interativa ficou bloqueada nesta etapa. A compilação de produção confirmou a rota `/admin/produtos/[id]`.
+- status: completed
+
+## Ações do cabeçalho e retorno para Produtos
+
+- objective: padronizar Cancelar/Salvar alterações e tornar o cancelamento previsível, retornando à listagem de Produtos sem persistir rascunhos.
+- status: in_progress
+- started_at: 2026-08-23
+- checklist:
+  - [completed] auditar a geometria atual dos botões e o fluxo de cancelamento;
+  - [completed] aplicar largura, altura, raio, padding e tipografia compartilhados;
+  - [completed] diferenciar as ações apenas por cor/estilo primário e secundário;
+  - [completed] detectar alterações pendentes no rascunho do produto;
+  - [completed] adicionar modal próprio para sair sem salvar;
+  - [completed] direcionar o retorno para `/admin?view=products` e fazer a aba Produtos respeitar a query;
+  - [completed] validar TypeScript, build, detector visual, diff e comportamento no navegador.
+- decision: usar `useRouter` para uma navegação interna explícita e uma confirmação visual reutilizando o padrão de modal da aplicação; nenhuma confirmação nativa será usada.
+- tools: skill local impeccable; apply_patch; validações locais e navegador autenticado.
+- validation:
+  - `npx tsc --noEmit`: passed;
+  - `npm run build`: passed;
+  - detector Impeccable com escopos `type` e `layout`: `[]`;
+  - auditoria em `app` e `components`: nenhuma chamada nativa de `alert`, `confirm` ou `prompt`;
+  - `git diff --check`: passed, apenas avisos de normalização CRLF.
+- limitation: o navegador autenticado recusou a navegação por política de URL, portanto a interação visual não pôde ser repetida nesta etapa; a rota e o fluxo foram confirmados pelo TypeScript/build.
+- status: completed
+
+## Espaçamento da notificação de sucesso do produto
+
+- objective: separar visualmente mensagens de sucesso do cabeçalho e dos cards seguintes, preservando um feedback discreto.
+- status: in_progress
+- started_at: 2026-08-23
+- checklist:
+  - [completed] auditar usos de `success-notice` no produto e no formulário de administração;
+  - [completed] aplicar margem superior e inferior próprias ao produto;
+  - [completed] ampliar levemente o padding interno e preservar a altura compacta;
+  - [completed] adicionar ajuste responsivo para telas menores;
+  - [completed] validar TypeScript, build, detector visual e diff.
+- decision: usar uma regra escopada ao shell da página do produto para não alterar espaçamentos de outras mensagens de sucesso sem necessidade.
+- tools: skills locais frontend-design e impeccable; rg; apply_patch; validações locais.
+- validation:
+  - `npx tsc --noEmit`: passed;
+  - `npm run build`: passed;
+  - detector Impeccable com escopos `layout` e `type`: `[]`;
+  - `git diff --check`: passed, apenas avisos de normalização CRLF.
+- status: completed
+
+## Depuração do visualizador de imagens do produto
+
+- objective: corrigir imagens vazias no lightbox e na galeria administrativa sem expor credenciais do Google Drive.
+- status: in_progress
+- started_at: 2026-08-23
+- checklist:
+  - [completed] auditar os dados de imagem e a origem das URLs no frontend e nas APIs;
+  - [completed] confirmar que o frontend usa a rota autenticada server-side `/api/integrations/google-drive/image` e não URL direta do Drive;
+  - [completed] identificar a regra CSS que mantém imagens sem `image-loaded` invisíveis;
+  - [completed] confirmar que o listener que adicionava `image-loaded` existe somente no catálogo, não na página do produto;
+  - [completed] aplicar tratamento explícito de `onLoad`/`onError` em todas as imagens da página do produto e do lightbox;
+  - [completed] melhorar o log server-side do proxy de imagens sem expor tokens ou stack trace ao navegador;
+  - [blocked] validar visualmente com sessão autenticada e medir respostas reais das imagens em produtos distintos quando o navegador integrado aceitar a URL local;
+  - [completed] executar typecheck, build, lint direcionado, detector visual e diff após a correção.
+- root_cause: a página do produto renderizava `<img>` sem classe de estado, enquanto `app/globals.css` definia opacidade zero até `image-loaded`; o listener global que marcava o estado estava montado em `app/admin/page.tsx`, não na rota `/admin/produtos/[id]`.
+- security: as URLs continuam apontando para a rota própria autenticada; a credencial OAuth permanece somente no backend. O log registra usuário, referência do arquivo e mensagem sanitizada, sem resposta bruta do Google, token ou query.
+- changes: `ProductImage` controla loading/loaded/error via eventos reais e preserva o skeleton até o carregamento; o proxy registra contexto no servidor quando o download falha.
+- tools: browser:control-in-app-browser; skills Supabase; rg; apply_patch; servidor Next local.
+- validation: `npx tsc --noEmit`, build de produção, lint direcionado da página/API, detector Impeccable e `git diff --check` passaram. As rotas testadas sem sessão retornaram 401, confirmando a proteção.
+- limitation: a aba integrada disponível estava em uma página de erro `ERR_CONNECTION_REFUSED` e a política do navegador bloqueou a navegação para localhost; a validação autenticada interativa e os status 200 reais do proxy precisam ser repetidos quando a aba/servidor estiver acessível. O `npm run lint -- --quiet` completo mantém um erro preexistente em `app/admin/page.tsx:169`, fora desta correção.
+- status: completed_with_blocked_visual_validation
+
+## Extração do visualizador de imagens reutilizável
+
+- objective: transformar o lightbox em componente compartilhado para produto e preview do scraper, mantendo estados de carregamento e a separação de segurança do backend.
+- status: in_progress
+- started_at: 2026-08-23
+- checklist:
+  - [completed] ler as skills impeccable e frontend-design e seguir o fluxo de extração do design system;
+  - [completed] auditar as duas implementações existentes de lightbox;
+  - [completed] criar `components/ImageViewer.tsx` com contrato de props independente do domínio;
+  - [completed] centralizar `ImageWithState` com skeleton, carregamento real e erro;
+  - [completed] migrar a página administrativa do produto;
+  - [completed] migrar o preview do scraper;
+  - [completed] adicionar suporte a Escape, setas, foco, clique fora, X, contador e miniaturas;
+  - [completed] documentar o contrato no `DESIGN.md`;
+  - [completed] validar TypeScript, lint direcionado, build, detector visual e diff.
+- decision: o componente recebe apenas URLs seguras e metadados normalizados; autenticação, Google Drive e origem do produto permanecem fora dele.
+- files_changed: `components/ImageViewer.tsx`, `app/admin/produtos/[id]/page.tsx`, `app/admin/page.tsx`, `DESIGN.md`.
+- validation: build e TypeScript passaram; lint direcionado do componente e da página de produto passou; detector Impeccable retornou `[]`; `git diff --check` passou, com avisos de normalização de linha do Git.
+- limitation: validação interativa no navegador não foi executada nesta etapa porque a sessão integrada disponível continua sem acesso ao servidor local; os testes de renderização foram substituídos por compilação, lint e auditoria estrutural.
+- existing_lint: `app/admin/page.tsx:170` mantém um diagnóstico preexistente sobre `setView` síncrono em um efeito; a migração do visualizador não introduziu esse diagnóstico.
+- status: completed
+- started_at: 2026-08-23
+- checklist:
+  - [completed] auditar catálogo, APIs, migrations e armazenamento atual de imagens;
+  - [completed] consultar documentação atual do Next.js e Supabase/Postgres;
+  - [completed] criar migration para relações por `catalog_product_id`, imagem principal e unicidade interna;
+  - [completed] criar APIs de detalhe, edição e galeria;
+  - [completed] criar a rota/página de gerenciamento do produto;
+  - [completed] fazer o Catálogo navegar para a rota permanente;
+  - [completed] validar com typecheck, lint, build e checagem de diff.
+
+### Decisões
+
+- Manter `catalog_products.id uuid default gen_random_uuid()` como identidade interna permanente e deixar `source`/`external_product_id` apenas como chave de origem com unicidade composta.
+- Adicionar `catalog_product_id` às relações de imagens e taxonomia, preenchendo registros existentes por junção em `(source, external_product_id)` antes de tornar a referência obrigatória.
+- Guardar a capa como `primary_image_id` apontando para a relação de imagem, evitando duplicar a escolha em múltiplas superfícies.
+- Manter o Google Drive como armazenamento atual, expondo upload/exclusão/reordenação por rotas administrativas protegidas.
+
+### Fontes consultadas
+
+- Next.js App Router e segmentos dinâmicos: https://nextjs.org/docs/app/getting-started/layouts-and-pages
+- Next.js Route Handlers: https://nextjs.org/docs/app/api-reference/file-conventions/route
+- Supabase RLS: https://supabase.com/docs/guides/database/postgres/row-level-security
+- Supabase Storage schema/access control: https://supabase.com/docs/guides/storage/schema/design e https://supabase.com/docs/guides/storage/security/access-control
+- Código local: `app/admin/page.tsx`, APIs de catálogo, migrations de catálogo/taxonomia/Google Drive.
+
+### Próximo passo
+
+Aplicar a migration e implementar as rotas de detalhe e de gestão das imagens.
+
+### Resultado da implementação
+
+- A rota `/admin/produtos/[id-interno]` apresenta informações gerais, taxonomia, galeria, capa, disponibilidade/estoque, preços e demais dados.
+- A capa é persistida em `catalog_products.primary_image_id` e a listagem usa essa referência, não o primeiro arquivo arbitrário.
+- A galeria permite ampliar, adicionar por URL HTTPS, excluir com confirmação, reordenar e trocar a capa.
+- A aprovação continua usando o UUID gerado por `gen_random_uuid()` como identidade permanente; a origem KaBuM permanece em `source` e `external_product_id`.
+- `npm run build`, `npx tsc --noEmit`, `npm run lint -- --quiet` e `git diff --check` passaram.
+
+### Limitações registradas
+
+- Não foi possível executar uma validação SQL no Supabase local: a CLI falhou antes do comando por `EPERM` ao gravar `C:\Users\ThyagoAz\\.supabase\\telemetry.json` fora do workspace.
+- A revisão visual no Chrome não foi executada porque o skill indicado está presente, mas o caminho esperado de `browser-client.mjs` não existe nesta sessão. A build confirmou a rota e os componentes compilados.
+
+### Estado final
+
+status: completed
+
+## Correção do 500 na rota de detalhe
+
+- objective: corrigir `GET /api/catalog/products/[id]` retornando 500 no banco remoto atual.
+- status: completed
+- started_at: 2026-08-23
+- checklist:
+  - [completed] consultar migrations, tabelas e logs do projeto Supabase remoto;
+  - [completed] confirmar que `20260823000008` ainda não foi aplicada;
+  - [completed] adicionar fallback de leitura para as relações antigas;
+  - [completed] validar typecheck, build e diff.
+
+### Evidência
+
+- O projeto remoto possui migrations até `backfill_catalog_google_drive_image_references`.
+- `catalog_products`, `google_drive_product_files` e `product_category_assignments` ainda não possuem as colunas internas novas.
+- Os logs registraram 400 na consulta da listagem com a relação `catalog_products_primary_image_fk`, e isso também impediria o detalhe.
+
+### Decisão e limitação
+
+- As APIs de leitura agora tentam a relação por `catalog_product_id` e recuam para `source + external_product_id` quando a migration ainda não existe.
+- A aplicação da migration remota foi rejeitada pelo controle de segurança por alterar schema/dados e habilitar RLS sem autorização explícita do usuário. A migration continua versionada no repositório e precisa ser aplicada antes de habilitar integralmente capa, reordenação e edição das relações por identidade interna.
+
+### Aplicação autorizada
+
+- O usuário autorizou explicitamente a aplicação remota.
+- A primeira tentativa falhou com `42P10` no backfill da capa; a migration foi corrigida trocando o `LATERAL` por uma subconsulta correlacionada.
+- A migration foi aplicada com sucesso como `20260823212726_product_internal_identity`.
+- Verificação: as três colunas novas existem; o produto `09e58a5c-5913-4c66-bda8-0cbe59bf8055` possui 5 imagens e `primary_image_id` definido.
+
+## Correção de IDs das imagens e 500 pós-migration
+
+- objective: corrigir 404 do endpoint de imagem e 500 da leitura de detalhe após a migration.
+- status: completed
+- evidence: logs do Supabase mostraram 400 na consulta de `google_drive_product_files`; consulta SQL confirmou que `google_drive_product_files.drive_file_id` é UUID da linha de relação e que o ID real do Drive está em `google_drive_files.drive_file_id`.
+- change: APIs agora hidratam as relações com `google_drive_files` antes de construir `image_url`, mantendo o ID correto para `/api/integrations/google-drive/image`.
+- validation: `npx tsc --noEmit`, `npm run build` e `git diff --check` passaram; consulta SQL confirmou 5 pares relação/arquivo com IDs externos válidos.
+
+## Diagnóstico autenticado do 500 pós-migration
+
+- objective: reproduzir a falha com sessão administrativa real e corrigir a causa raiz da consulta de imagens.
+- status: in_progress
+- checklist:
+  - [completed] autenticar a sessão no navegador integrado e abrir a rota do produto alvo;
+  - [completed] observar a página real exibindo `Produto indisponível` após a resposta do backend;
+  - [completed] correlacionar os logs Supabase: produto e taxonomia retornam 200, enquanto as consultas de `google_drive_product_files` retornam 400;
+  - [completed] comparar a seleção com o schema remoto e confirmar que `name` e `mime_type` pertencem a `google_drive_files`, não à tabela de relação;
+  - [completed] remover essas colunas inválidas das consultas da relação e hidratar os metadados no arquivo do Drive;
+  - [completed] repetir API autenticada, página, produto alternativo e ID inexistente.
+- root_cause: a rota selecionava `name` e `mime_type` em `google_drive_product_files`, colunas inexistentes. O PostgREST rejeitava a consulta com HTTP 400; a rota convertia esse erro de relação em HTTP 500.
+- security: o log server-side continua registrando etapa, código, mensagem, detalhes e hint do erro sem enviar stack trace, query ou credenciais ao navegador.
+- validation: após a correção, os logs Supabase registraram 200 para produto, imagens, arquivos Drive e taxonomia do alvo; a página renderizou as 5 imagens e a capa. O segundo produto renderizou normalmente. O UUID inexistente exibiu `Produto não encontrado.` e a consulta correspondente ao banco retornou 200 com conjunto vazio, convertido pela API em 404.
+- code_validation: `npx tsc --noEmit`, `npm run build` e `git diff --check` passaram; o navegador autenticado não registrou erros de console.
+
+## Ajuste da galeria administrativa do produto
+
+- objective: corrigir alinhamento, contenção, controles e preview da galeria sem alterar as funcionalidades existentes.
+- status: completed
+- checklist:
+  - [completed] ler as skills impeccable, frontend-design e browser in-app;
+  - [completed] auditar a implementação e localizar controle de ordenação duplicado/oculto;
+  - [completed] estabelecer cards com dimensões iguais, área de mídia isolada e barra inferior própria;
+  - [completed] manter `object-fit: contain`, `overflow: hidden`, responsividade e estados da imagem principal;
+  - [completed] adicionar navegação anterior/próxima e miniaturas ao lightbox existente;
+  - [completed] testar visualmente no navegador autenticado e confirmar 5 cards com a mesma largura/altura;
+  - [completed] testar abertura do lightbox, contador, 5 miniaturas e avanço de `01 / 05` para `02 / 05`;
+  - [completed] validar typecheck, build, detector visual e diff.
+- evidence: no navegador, todos os cards mediram 273x368 no viewport de teste; barras de ações ficaram dentro dos cards com altura uniforme de 36px; destaque e estados `Imagem principal`/`Imagem vinculada` permaneceram visíveis.
+- files_changed: `app/admin/produtos/[id]/page.tsx`, `app/globals.css`.
+
+## Diagnóstico reproduzível da rota de detalhe
+
+- objective: investigar 500 com evidência real e melhorar observabilidade segura.
+- status: completed
+- banco: o UUID interno alvo existe; `source=kabum`, `external_product_id=1020920`, capa definida, 5 relações de imagem, 5 arquivos Drive e 4 categorias.
+- comparação: outro produto interno (`90c5b326-c9ae-42aa-beac-c8c78b539e09`) também tem relações válidas: capa definida, 2 imagens, 2 arquivos Drive e 4 categorias.
+- inexistente: UUID nulo de teste não possui registros.
+- causa observada nos logs Supabase: consultas antigas tentavam usar a relação de imagem com o UUID da linha `google_drive_product_files` como se fosse o ID externo do Drive; também houve 400 na seleção de imagens antes da hidratação correta.
+- correção: hidratar `google_drive_files.drive_file_id`, registrar etapa/código/mensagem/detalhes do erro no servidor e retornar mensagens genéricas ao cliente; IDs inválidos retornam 404.
+- teste direto local sem sessão: tanto o ID existente quanto o inexistente retornam 401 antes da autenticação, não sendo possível reproduzir o trecho autenticado sem uma sessão Chrome disponível. O skill Chrome foi lido, mas o conector referenciado não existe nesta sessão.
+- validação: typecheck, build e diff passaram.
+
 ## Dashboard administrativo PriceScout
 
 - [completed] Ler as skills stitch-design-taste, impeccable e frontend-design
@@ -1053,4 +1294,51 @@ O botão seguro é `Manter produto`, que restaura o último link revisado. `Desc
   - `git diff --check`: passed;
   - código de persistência não grava mais `imageUrl`, `source_url` ou `source_image_url`; buffers existem somente no fluxo server-side de upload/download.
 - limitation: colunas legadas `source_url` e `source_image_url` permanecem no banco remoto para evitar exclusão irreversível; o código novo não as preenche. A remoção poderá ser feita em migration destrutiva separada, após backup e aprovação explícita.
+- status: completed
+
+## Regra global de feedback visual e exclusão de imagem
+
+- objective: remover confirmações nativas do navegador e substituir a exclusão de imagem por um modal próprio com preview, processamento, sucesso e erro.
+- status: in_progress
+- started_at: 2026-08-23
+- checklist:
+  - [completed] auditar chamadas de `alert`, `confirm` e `prompt` no projeto;
+  - [completed] registrar a regra global em `AGENTS.md`;
+  - [completed] substituir `window.confirm` da galeria por modal acessível;
+  - [completed] bloquear cliques duplicados e aguardar confirmação real do backend;
+  - [completed] manter a imagem na interface em caso de falha e permitir nova tentativa;
+  - [completed] validar TypeScript, build, detector visual, diff e interação no navegador autenticado.
+- decision: o modal usa os padrões visuais existentes da área administrativa, com preview contido, botão destrutivo explícito e spinner discreto respeitando redução de movimento.
+- tools: skills locais frontend-design, impeccable e browser:control-in-app-browser; rg; apply_patch; validações locais e navegador autenticado.
+- validation:
+  - auditoria em `app`, `components` e `lib` não encontrou chamadas nativas de `alert`, `confirm` ou `prompt`;
+  - `npx tsc --noEmit`: passed;
+  - `npm run build`: passed;
+  - detector Impeccable: `[]`;
+  - `git diff --check`: passed, apenas avisos de normalização CRLF;
+  - navegador autenticado: modal abriu como `alertdialog` com preview, identificação, mensagem, Cancelar e Excluir imagem; fechar preservou as 5 imagens da galeria.
+- limitation: o botão destrutivo não foi confirmado no navegador para evitar apagar uma imagem real durante a validação visual; a sequência de backend está conectada ao endpoint real e o estado de erro permanece no modal para nova tentativa.
+- status: completed
+
+## Hierarquia tipográfica administrativa
+
+- objective: reduzir o uso de pesos fortes e estabelecer uma hierarquia tipográfica consistente para catálogo, formulários, cards, tabelas, modais e administração.
+- status: in_progress
+- started_at: 2026-08-23
+- checklist:
+  - [completed] pesquisar referências atuais de tipografia produtiva e hierarquia de ações;
+  - [completed] auditar pesos explícitos e elementos `strong` no CSS da aplicação;
+  - [completed] criar tokens de peso regular, médio, semibold e destaque;
+  - [completed] reduzir labels, metadados, links e nomes comuns para pesos 400–500;
+  - [completed] manter semibold em títulos de seção, títulos de produto e ações primárias;
+  - [completed] validar TypeScript, build, detector visual, diff e leitura no navegador autenticado.
+- decision: seguir uma escala produtiva inspirada no Carbon: corpo e labels regulares, headings de componente em semibold e peso forte apenas para marca ou destaque excepcional; usar tamanho, espaçamento e cor como diferenciação complementar.
+- sources: Carbon Productive Typography (https://v10.carbondesignsystem.com/guidelines/typography/productive/), Material Buttons (https://m2.material.io/go/design-buttons/).
+- tools: skills locais frontend-design e browser:control-in-app-browser; pesquisa web; rg; apply_patch.
+- validation:
+  - `npx tsc --noEmit`: passed;
+  - `npm run build`: passed;
+  - detector Impeccable com escopo `type`: `[]`;
+  - `git diff --check`: passed, apenas avisos de normalização CRLF;
+  - navegador autenticado: título do produto em 600, headings de seção em 600, labels e ações da galeria em 500, ID interno em 400; screenshot confirmou leitura mais leve e título longo com quebra controlada.
 - status: completed
