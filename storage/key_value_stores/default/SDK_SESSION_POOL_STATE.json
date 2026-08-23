@@ -1,0 +1,1677 @@
+{
+  "usableSessionsCount": 6,
+  "retiredSessionsCount": 0,
+  "sessions": [
+    {
+      "id": "session_pQr8uTYzwu",
+      "cookieJar": {
+        "version": "tough-cookie@6.0.2",
+        "storeType": "MemoryCookieStore",
+        "rejectPublicSuffixes": true,
+        "enableLooseMode": false,
+        "allowSpecialUseDomain": true,
+        "prefixSecurity": "silent",
+        "cookies": []
+      },
+      "userData": {},
+      "maxErrorScore": 3,
+      "errorScoreDecrement": 0.5,
+      "expiresAt": "2026-08-23T06:55:47.512Z",
+      "createdAt": "2026-08-23T06:05:47.512Z",
+      "usageCount": 0,
+      "maxUsageCount": 50,
+      "errorScore": 0
+    },
+    {
+      "id": "session_LBQhe92JYP",
+      "cookieJar": {
+        "version": "tough-cookie@6.0.2",
+        "storeType": "MemoryCookieStore",
+        "rejectPublicSuffixes": true,
+        "enableLooseMode": false,
+        "allowSpecialUseDomain": true,
+        "prefixSecurity": "silent",
+        "cookies": [
+          {
+            "key": "isMobile",
+            "value": "false",
+            "expires": "2026-08-23T06:55:51.073Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:05:51.074Z",
+            "lastAccessed": "2026-08-23T06:05:51.074Z"
+          },
+          {
+            "key": "isMobileDevice",
+            "value": "false",
+            "expires": "2026-08-23T06:55:51.073Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:05:51.075Z",
+            "lastAccessed": "2026-08-23T06:05:51.075Z"
+          },
+          {
+            "key": "storeShippingCode",
+            "value": "1",
+            "expires": "2026-08-23T06:55:51.073Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:05:51.075Z",
+            "lastAccessed": "2026-08-23T06:05:51.075Z"
+          },
+          {
+            "key": "storeCode",
+            "value": "001",
+            "expires": "2026-08-23T06:55:51.073Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:05:51.075Z",
+            "lastAccessed": "2026-08-23T06:05:51.075Z"
+          },
+          {
+            "key": "_vwo_uuid_v2",
+            "value": "DB30662C81FA63E61E2526D4AA70D97DE|09f0c6ddfec9fe414494821c681f10e5",
+            "expires": "2027-08-24T06:05:48.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.075Z",
+            "lastAccessed": "2026-08-23T06:05:51.075Z"
+          },
+          {
+            "key": "_vwo_uuid",
+            "value": "DB30662C81FA63E61E2526D4AA70D97DE",
+            "expires": "2027-08-23T11:55:00.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.079Z",
+            "lastAccessed": "2026-08-23T06:05:51.079Z"
+          },
+          {
+            "key": "_vwo_sn",
+            "value": "0%3A1%3A%3A%3A%3A%3A%3A1787465142816",
+            "expires": "2026-08-23T06:35:48.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.080Z",
+            "lastAccessed": "2026-08-23T06:05:51.080Z"
+          },
+          {
+            "key": "_vwo_ds",
+            "value": "3%241787465142%3A11.49882956%3A%3A%3A%3A%3A1787465142%3A1787465142%3A1",
+            "expires": "2026-09-22T06:05:48.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.080Z",
+            "lastAccessed": "2026-08-23T06:05:51.080Z"
+          },
+          {
+            "key": "_vis_opt_s",
+            "value": "1%7C",
+            "expires": "2026-12-01T06:05:48.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.080Z",
+            "lastAccessed": "2026-08-23T06:05:51.080Z"
+          },
+          {
+            "key": "_vis_opt_test_cookie",
+            "value": "1",
+            "expires": "2026-08-23T06:55:51.073Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.080Z",
+            "lastAccessed": "2026-08-23T06:05:51.080Z"
+          },
+          {
+            "key": "GTMUtmTimestamp",
+            "value": "1787465149177",
+            "expires": "2027-02-19T06:05:49.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.080Z",
+            "lastAccessed": "2026-08-23T06:05:51.080Z"
+          },
+          {
+            "key": "GTMUtmSource",
+            "value": "google",
+            "expires": "2027-02-19T06:05:49.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.080Z",
+            "lastAccessed": "2026-08-23T06:05:51.080Z"
+          },
+          {
+            "key": "GTMUtmMedium",
+            "value": "cpc",
+            "expires": "2027-02-19T06:05:49.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "GTMUtmCampaign",
+            "value": "auto",
+            "expires": "2027-02-19T06:05:49.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "GTMGclid",
+            "value": "CjwKCAjwkaXUBhASEiwAZI3dsyN6Lq4pvYfx2Qrr6T4vtxmkOOZ9SMj3My187tfLvsN4OXqR55j8yxoCCiEQAvD_BwE",
+            "expires": "2027-02-19T06:05:49.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "GTMGbraid",
+            "value": "0AAAAADx-HyEiBFLBY0m-cYbNxrGsYZKmU",
+            "expires": "2027-02-19T06:05:49.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "_gcl_gs",
+            "value": "2.1.k1$i1787465147$u39145657",
+            "expires": "2026-11-21T06:05:49.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "AwinChannelCookie",
+            "value": "other",
+            "expires": "2026-08-23T06:55:51.073Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "_dd_s",
+            "value": "rum=0&expire=1787466049242&logs=0",
+            "expires": "2026-08-23T06:20:49.000Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "goto",
+            "value": "%2F",
+            "expires": "2026-08-23T06:55:51.073Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "campaign_retail_events",
+            "value": "true",
+            "expires": "2026-08-23T06:55:51.073Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "campaign_sponsored_autocomplete",
+            "value": "false",
+            "expires": "2026-08-23T06:15:49.441Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "ServerAwinChannelCookie",
+            "value": "other",
+            "expires": "2026-08-23T06:55:51.073Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "httpOnly": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "campaign_sponsored_product",
+            "value": "true",
+            "expires": "2026-08-23T06:10:49.472Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "_gcl_aw",
+            "value": "GCL.1787465150.CjwKCAjwkaXUBhASEiwAZI3dsyN6Lq4pvYfx2Qrr6T4vtxmkOOZ9SMj3My187tfLvsN4OXqR55j8yxoCCiEQAvD_BwE",
+            "expires": "2026-11-21T06:05:49.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "_gcl_dc",
+            "value": "GCL.1787465150.CjwKCAjwkaXUBhASEiwAZI3dsyN6Lq4pvYfx2Qrr6T4vtxmkOOZ9SMj3My187tfLvsN4OXqR55j8yxoCCiEQAvD_BwE",
+            "expires": "2026-11-21T06:05:49.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "_ga",
+            "value": "GA1.1.1669137235.1787465150",
+            "expires": "2027-09-27T06:05:49.546Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "_gcl_au",
+            "value": "1.1.127891335.1787465149.-.-.1787465149.224335871.1787465150.1787465149",
+            "expires": "2026-11-21T06:05:49.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "AdoptConsent",
+            "value": "N4Ig7gpgRgzglgFwgSQCIgFwgCa4MwCsAxngIwC0ATBAIYTkAsU29NDAbHue0QGaeUCAdgCcpIgRAAaEADc48BAHsATsmyYQIhniEEoUVkSgNGDGgXJRSNCqJFEADHnYQxUSTKUAHBMgB2ACo0AOYwmADaALpevgDyAK4IwWGRMSBESv4wEP5+GlgAtkoAsgzYRNIgELK5yQCe3hCaYAAcUHAAEgBeEAByVZnZdQBqECrwWZhCMgne2DRI2ACCCJqUjpTs5I6tVHiBjuwYjgQYDCIAdEKUlABaIAC+QA",
+            "expires": "2026-10-22T06:05:49.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "AdoptVisitorId",
+            "value": "JwFgzA7ArARjCmBaAhgYxiRITKomAjMgYhMMKgAxgBs8wBMUQA==",
+            "expires": "2026-10-22T06:05:49.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "session",
+            "value": "4bafc9bb974071eca4a9848d16420fda",
+            "expires": "2026-08-23T06:55:51.073Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "miniCartFeatureFlag",
+            "value": "true",
+            "expires": "2026-08-23T06:15:49.832Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:05:51.081Z",
+            "lastAccessed": "2026-08-23T06:05:51.081Z"
+          },
+          {
+            "key": "__rtbh.lid",
+            "value": "%7B%22eventType%22%3A%22lid%22%2C%22id%22%3A%22dTnvWSFWOPqkIin6WxHf%22%2C%22expiryDate%22%3A%222027-08-23T06%3A05%3A49.864Z%22%7D",
+            "expires": "2027-08-23T06:05:49.000Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": true,
+            "creation": "2026-08-23T06:05:51.082Z",
+            "lastAccessed": "2026-08-23T06:05:51.082Z"
+          },
+          {
+            "key": "lantern",
+            "value": "184af3bb-330c-4f13-8de8-e5d44a6a2379",
+            "expires": "2026-09-22T06:05:49.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.082Z",
+            "lastAccessed": "2026-08-23T06:05:51.082Z"
+          },
+          {
+            "key": "_clck",
+            "value": "uymemg%5E2%5Eg8u%5E0%5E2426",
+            "expires": "2027-08-23T06:05:49.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.082Z",
+            "lastAccessed": "2026-08-23T06:05:51.082Z"
+          },
+          {
+            "key": "_fbp",
+            "value": "fb.2.1787465149996.699483919676038518",
+            "expires": "2026-11-21T06:05:49.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.082Z",
+            "lastAccessed": "2026-08-23T06:05:51.082Z"
+          },
+          {
+            "key": "_ga_Q68S4NB67S",
+            "value": "GS2.1.s1787465149$o1$g0$t1787465150$j59$l0$h0$dvCq8ev1dOaNSHZZlHrh5Qo_s_vIgpVzBXQ",
+            "expires": "2027-09-27T06:05:50.037Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.082Z",
+            "lastAccessed": "2026-08-23T06:05:51.082Z"
+          },
+          {
+            "key": "_tt_enable_cookie",
+            "value": "1",
+            "expires": "2027-09-17T06:05:50.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.082Z",
+            "lastAccessed": "2026-08-23T06:05:51.082Z"
+          },
+          {
+            "key": "_ttp",
+            "value": "01M0PKKBNRMVEP9R43FH11SNF6_.tt.2",
+            "expires": "2027-09-17T06:05:50.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.082Z",
+            "lastAccessed": "2026-08-23T06:05:51.082Z"
+          },
+          {
+            "key": "_hjSessionUser_1351489",
+            "value": "eyJpZCI6ImUwZDA5ODdiLTNlNDUtNTA5OS1hYjY5LTcwYTE1OGFiMjNjMCIsImNyZWF0ZWQiOjE3ODc0NjUxNTAxNzYsImV4aXN0aW5nIjpmYWxzZX0=",
+            "expires": "2027-08-23T06:05:50.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.082Z",
+            "lastAccessed": "2026-08-23T06:05:51.082Z"
+          },
+          {
+            "key": "_hjSession_1351489",
+            "value": "eyJpZCI6IjI3MDhlMGViLTU1M2QtNDM5ZC04OGFkLWQ4YTllZTE5NjU2NyIsImMiOjE3ODc0NjUxNTAxNzcsInMiOjAsInIiOjAsInNiIjowLCJzciI6MCwic2UiOjAsImZzIjoxLCJzcCI6MH0=",
+            "expires": "2026-08-23T06:35:50.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.082Z",
+            "lastAccessed": "2026-08-23T06:05:51.082Z"
+          },
+          {
+            "key": "_uetsid",
+            "value": "b0c4d2309eb811f1b77cf5d82d62ec84",
+            "expires": "2026-08-24T06:05:50.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.082Z",
+            "lastAccessed": "2026-08-23T06:05:51.082Z"
+          },
+          {
+            "key": "_uetvid",
+            "value": "b0c504109eb811f1abe045d88e04638c",
+            "expires": "2027-09-17T06:05:50.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.082Z",
+            "lastAccessed": "2026-08-23T06:05:51.082Z"
+          },
+          {
+            "key": "_pin_unauth",
+            "value": "dWlkPU9UazNZVFZtTmprdFpqWTNPQzAwTWpVd0xUZ3haRFF0T1RJeU9HRTRPV1ZsTkRVNQ",
+            "expires": "2027-08-23T06:05:50.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.082Z",
+            "lastAccessed": "2026-08-23T06:05:51.082Z"
+          },
+          {
+            "key": "_clsk",
+            "value": "6550nn%5E1787465150358%5E1%5E0%5Ek.clarity.ms%2Fcollect",
+            "expires": "2026-08-24T06:05:50.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.082Z",
+            "lastAccessed": "2026-08-23T06:05:51.082Z"
+          },
+          {
+            "key": "afUserId",
+            "value": "327fe2a5-39c2-42e2-9e78-38156974ce81-p",
+            "expires": "2027-09-27T06:05:50.388Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.082Z",
+            "lastAccessed": "2026-08-23T06:05:51.082Z"
+          },
+          {
+            "key": "ttcsid",
+            "value": "1787465150142::CQgQ5kkDsSRtvfnxxhVt.1.1787465150459.0::1.-2347.0::0.0.0.0::0.0.0",
+            "expires": "2027-09-17T06:05:50.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.082Z",
+            "lastAccessed": "2026-08-23T06:05:51.082Z"
+          },
+          {
+            "key": "ttcsid_C8LBSBCB7AN1JESF8SU0",
+            "value": "1787465150141::D44-Y_Z3got8FwZgTQ5F.1.1787465150460.0",
+            "expires": "2027-09-17T06:05:50.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.083Z",
+            "lastAccessed": "2026-08-23T06:05:51.083Z"
+          },
+          {
+            "key": "AF_SYNC",
+            "value": "1787465150576",
+            "expires": "2026-08-30T06:05:50.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:05:51.083Z",
+            "lastAccessed": "2026-08-23T06:05:51.083Z"
+          }
+        ]
+      },
+      "userData": {},
+      "maxErrorScore": 3,
+      "errorScoreDecrement": 0.5,
+      "expiresAt": "2026-08-23T06:55:47.516Z",
+      "createdAt": "2026-08-23T06:05:47.516Z",
+      "usageCount": 1,
+      "maxUsageCount": 50,
+      "errorScore": 0
+    },
+    {
+      "id": "session_VmZ4c5iMmS",
+      "cookieJar": {
+        "version": "tough-cookie@6.0.2",
+        "storeType": "MemoryCookieStore",
+        "rejectPublicSuffixes": true,
+        "enableLooseMode": false,
+        "allowSpecialUseDomain": true,
+        "prefixSecurity": "silent",
+        "cookies": []
+      },
+      "userData": {},
+      "maxErrorScore": 3,
+      "errorScoreDecrement": 0.5,
+      "expiresAt": "2026-08-23T07:04:38.153Z",
+      "createdAt": "2026-08-23T06:14:38.153Z",
+      "usageCount": 0,
+      "maxUsageCount": 50,
+      "errorScore": 0
+    },
+    {
+      "id": "session_7PoLAKie9C",
+      "cookieJar": {
+        "version": "tough-cookie@6.0.2",
+        "storeType": "MemoryCookieStore",
+        "rejectPublicSuffixes": true,
+        "enableLooseMode": false,
+        "allowSpecialUseDomain": true,
+        "prefixSecurity": "silent",
+        "cookies": [
+          {
+            "key": "isMobile",
+            "value": "false",
+            "expires": "2026-08-23T07:04:43.355Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:14:43.355Z",
+            "lastAccessed": "2026-08-23T06:14:43.355Z"
+          },
+          {
+            "key": "isMobileDevice",
+            "value": "false",
+            "expires": "2026-08-23T07:04:43.355Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:14:43.355Z",
+            "lastAccessed": "2026-08-23T06:14:43.355Z"
+          },
+          {
+            "key": "storeShippingCode",
+            "value": "1",
+            "expires": "2026-08-23T07:04:43.355Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:14:43.355Z",
+            "lastAccessed": "2026-08-23T06:14:43.355Z"
+          },
+          {
+            "key": "storeCode",
+            "value": "001",
+            "expires": "2026-08-23T07:04:43.355Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:14:43.355Z",
+            "lastAccessed": "2026-08-23T06:14:43.355Z"
+          },
+          {
+            "key": "_vwo_uuid_v2",
+            "value": "DA4F8BB083B69AA9681AFBCDA0C42FDBE|a1c05ac558931d7344452ab2a6e39daf",
+            "expires": "2027-08-24T06:14:39.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.355Z",
+            "lastAccessed": "2026-08-23T06:14:43.355Z"
+          },
+          {
+            "key": "_vwo_uuid",
+            "value": "DA4F8BB083B69AA9681AFBCDA0C42FDBE",
+            "expires": "2027-08-23T12:03:51.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.355Z",
+            "lastAccessed": "2026-08-23T06:14:43.355Z"
+          },
+          {
+            "key": "_vwo_sn",
+            "value": "0%3A1%3A%3A%3A%3A%3A%3A1787465672290",
+            "expires": "2026-08-23T06:44:39.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.355Z",
+            "lastAccessed": "2026-08-23T06:14:43.355Z"
+          },
+          {
+            "key": "_vwo_ds",
+            "value": "3%241787465672%3A63.26817766%3A%3A%3A%3A%3A1787465672%3A1787465672%3A1",
+            "expires": "2026-09-22T06:14:39.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.355Z",
+            "lastAccessed": "2026-08-23T06:14:43.355Z"
+          },
+          {
+            "key": "_vis_opt_s",
+            "value": "1%7C",
+            "expires": "2026-12-01T06:14:39.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.355Z",
+            "lastAccessed": "2026-08-23T06:14:43.355Z"
+          },
+          {
+            "key": "_vis_opt_test_cookie",
+            "value": "1",
+            "expires": "2026-08-23T07:04:43.355Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.355Z",
+            "lastAccessed": "2026-08-23T06:14:43.355Z"
+          },
+          {
+            "key": "GTMUtmTimestamp",
+            "value": "1787465679687",
+            "expires": "2027-02-19T06:14:39.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "GTMUtmSource",
+            "value": "google",
+            "expires": "2027-02-19T06:14:39.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "GTMUtmMedium",
+            "value": "cpc",
+            "expires": "2027-02-19T06:14:39.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "GTMUtmCampaign",
+            "value": "auto",
+            "expires": "2027-02-19T06:14:39.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "GTMGclid",
+            "value": "CjwKCAjwkaXUBhASEiwAZI3dsyN6Lq4pvYfx2Qrr6T4vtxmkOOZ9SMj3My187tfLvsN4OXqR55j8yxoCCiEQAvD_BwE",
+            "expires": "2027-02-19T06:14:39.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "GTMGbraid",
+            "value": "0AAAAADx-HyEiBFLBY0m-cYbNxrGsYZKmU",
+            "expires": "2027-02-19T06:14:39.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "_gcl_aw",
+            "value": "GCL.1787465680.CjwKCAjwkaXUBhASEiwAZI3dsyN6Lq4pvYfx2Qrr6T4vtxmkOOZ9SMj3My187tfLvsN4OXqR55j8yxoCCiEQAvD_BwE",
+            "expires": "2026-11-21T06:14:39.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "_gcl_dc",
+            "value": "GCL.1787465680.CjwKCAjwkaXUBhASEiwAZI3dsyN6Lq4pvYfx2Qrr6T4vtxmkOOZ9SMj3My187tfLvsN4OXqR55j8yxoCCiEQAvD_BwE",
+            "expires": "2026-11-21T06:14:39.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "_gcl_gs",
+            "value": "2.1.k1$i1787465678$u39145657",
+            "expires": "2026-11-21T06:14:39.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "AwinChannelCookie",
+            "value": "other",
+            "expires": "2026-08-23T07:04:43.355Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "_dd_s",
+            "value": "rum=0&expire=1787466579759&logs=0",
+            "expires": "2026-08-23T06:29:39.000Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "goto",
+            "value": "%2F",
+            "expires": "2026-08-23T07:04:43.355Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "ServerAwinChannelCookie",
+            "value": "other",
+            "expires": "2026-08-23T07:04:43.355Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "httpOnly": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "_ga",
+            "value": "GA1.1.1956801704.1787465680",
+            "expires": "2027-09-27T06:14:40.096Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "campaign_retail_events",
+            "value": "true",
+            "expires": "2026-08-23T07:04:43.355Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "campaign_sponsored_autocomplete",
+            "value": "false",
+            "expires": "2026-08-23T06:24:40.106Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "campaign_sponsored_product",
+            "value": "true",
+            "expires": "2026-08-23T06:19:40.192Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "_gcl_au",
+            "value": "1.1.675846112.1787465680.-.-.1787465680.1585360786.1787465680.1787465680",
+            "expires": "2026-11-21T06:14:40.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "_fbp",
+            "value": "fb.2.1787465680338.534052271621784765",
+            "expires": "2026-11-21T06:14:42.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "__rtbh.lid",
+            "value": "%7B%22eventType%22%3A%22lid%22%2C%22id%22%3A%22vRQkAi8jnHuxzedRnvR4%22%2C%22expiryDate%22%3A%222027-08-23T06%3A14%3A40.364Z%22%7D",
+            "expires": "2027-08-23T06:14:40.000Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": true,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "_clck",
+            "value": "35czaz%5E2%5Eg8u%5E0%5E2426",
+            "expires": "2027-08-23T06:14:40.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "AdoptConsent",
+            "value": "N4Ig7gpgRgzglgFwgSQCIgFwgCa4MwCsAxngIwC0ATBAIYTkAsU29NDAbHue0QGaeUCAdgCcpIgRAAaEADc48BAHsATsmyYQvbByFFo5IuyG9GJgAzlmDABzk87Gu04jeQ7DXPSQSgA4JkADsAFRoAcxhMAG0AXRk/BAB5AFcEUIjouJAiJUCYCECAjSwAW3IEACEw3m8IWQK0gE9fCE0wGyg4AAkALwgAOW8cvIaANQgVeFzMIRlk3w8kbABBBE1Kc0p2cnM7Sjxg83YMUgYMBnMAOgu8AC0QAF8gA=",
+            "expires": "2026-10-22T06:14:40.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "AdoptVisitorId",
+            "value": "GYEwLAbA7AxgpgIwLQ2sJYrAAxIeADiQGYIBDCCYgTmChDOyA===",
+            "expires": "2026-10-22T06:14:40.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "_hjSessionUser_1351489",
+            "value": "eyJpZCI6IjhlNjllMDE3LTQ5Y2ItNWUzYy04M2VmLTIzZTUzNWE2ZjMxMCIsImNyZWF0ZWQiOjE3ODc0NjU2ODA0NzAsImV4aXN0aW5nIjpmYWxzZX0=",
+            "expires": "2027-08-23T06:14:40.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "_hjSession_1351489",
+            "value": "eyJpZCI6ImM1MjgwNjk2LTJiZmYtNGQ1ZS1hMzFiLTU3ZTMyYjcyMzBhNiIsImMiOjE3ODc0NjU2ODA0NzEsInMiOjAsInIiOjAsInNiIjowLCJzciI6MCwic2UiOjAsImZzIjoxLCJzcCI6MH0=",
+            "expires": "2026-08-23T06:44:40.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "lantern",
+            "value": "91c64229-5d12-4b01-8333-09fa8da38603",
+            "expires": "2026-09-22T06:14:40.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "session",
+            "value": "00d1ccf6f8e89381bdc616c96cb65195",
+            "expires": "2026-08-23T07:04:43.355Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "miniCartFeatureFlag",
+            "value": "true",
+            "expires": "2026-08-23T06:24:40.516Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "_tt_enable_cookie",
+            "value": "1",
+            "expires": "2027-09-17T06:14:40.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "_ttp",
+            "value": "01M0PM3HRQ8NJK6MYWXHBDNJT5_.tt.2",
+            "expires": "2027-09-17T06:14:40.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "afUserId",
+            "value": "f479e629-8bcc-471c-a500-5e3160682ecc-p",
+            "expires": "2027-09-27T06:14:40.698Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "_pin_unauth",
+            "value": "dWlkPU9HUTVNems1TlRZdE9HWmtZeTAwTlRabUxUZzNZekl0WW1VNE5HWmlNelJpT1dNeA",
+            "expires": "2027-08-23T06:14:40.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "_clsk",
+            "value": "1c64nmg%5E1787465680828%5E1%5E0%5En.clarity.ms%2Fcollect",
+            "expires": "2026-08-24T06:14:40.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "AF_SYNC",
+            "value": "1787465680887",
+            "expires": "2026-08-30T06:14:40.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.356Z",
+            "lastAccessed": "2026-08-23T06:14:43.356Z"
+          },
+          {
+            "key": "cto_bundle",
+            "value": "Py4jW19ka2dFSFFRREF5OWtrQ1JydjVieGEwb0pJQk1HRGN1WWRLUnRUSDQwMHJBTExKdiUyQlRhRXFPQVhaaWhvd2l3eHR2ek5ITjhpV1pKSGFNQU45WjZXWmVSUnJBN2VoSlJDT3pGRWxzUm1vaXg5JTJCWWUlMkZFeTlySjhSbHdMM3psTEw0RTNBS1NCcVRNWTBmZXRFNlpQSllWYkElM0QlM0Q",
+            "expires": "2027-09-22T16:14:41.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.357Z",
+            "lastAccessed": "2026-08-23T06:14:43.357Z"
+          },
+          {
+            "key": "__rtbh.uid",
+            "value": "%7B%22eventType%22%3A%22uid%22%2C%22expiryDate%22%3A%222027-08-23T06%3A14%3A42.394Z%22%7D",
+            "expires": "2027-08-23T06:14:42.000Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": true,
+            "creation": "2026-08-23T06:14:43.357Z",
+            "lastAccessed": "2026-08-23T06:14:43.357Z"
+          },
+          {
+            "key": "ttcsid_C8LBSBCB7AN1JESF8SU0",
+            "value": "1787465680668::WJ2KUjBDxFBFoE4zrtUB.1.1787465682401.0",
+            "expires": "2027-09-17T06:14:42.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.357Z",
+            "lastAccessed": "2026-08-23T06:14:43.357Z"
+          },
+          {
+            "key": "ttcsid",
+            "value": "1787465680669::dZJGlAq7YhAu1_QLNLB1.1.1787465682402.0::1.-2248.0::0.0.0.0::0.0.0",
+            "expires": "2027-09-17T06:14:42.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.357Z",
+            "lastAccessed": "2026-08-23T06:14:43.357Z"
+          },
+          {
+            "key": "_uetsid",
+            "value": "ecfa11e09eb911f1ab69dd0fe941853d",
+            "expires": "2026-08-24T06:14:42.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.357Z",
+            "lastAccessed": "2026-08-23T06:14:43.357Z"
+          },
+          {
+            "key": "_uetvid",
+            "value": "ecfa44809eb911f1ab975754384b8f6b",
+            "expires": "2027-09-17T06:14:42.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.357Z",
+            "lastAccessed": "2026-08-23T06:14:43.357Z"
+          },
+          {
+            "key": "_ga_Q68S4NB67S",
+            "value": "GS2.1.s1787465680$o1$g0$t1787465682$j58$l0$h0$d-G6ycfHSoMyOjFJbJaiig73xbYxrTXPyjA",
+            "expires": "2027-09-27T06:14:42.427Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:14:43.358Z",
+            "lastAccessed": "2026-08-23T06:14:43.358Z"
+          },
+          {
+            "key": "kbm_blackfriday",
+            "value": "false",
+            "expires": "2026-08-23T06:19:42.484Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:14:43.358Z",
+            "lastAccessed": "2026-08-23T06:14:43.358Z"
+          }
+        ]
+      },
+      "userData": {},
+      "maxErrorScore": 3,
+      "errorScoreDecrement": 0.5,
+      "expiresAt": "2026-08-23T07:04:38.156Z",
+      "createdAt": "2026-08-23T06:14:38.156Z",
+      "usageCount": 1,
+      "maxUsageCount": 50,
+      "errorScore": 0
+    },
+    {
+      "id": "session_7TdyofUVNp",
+      "cookieJar": {
+        "version": "tough-cookie@6.0.2",
+        "storeType": "MemoryCookieStore",
+        "rejectPublicSuffixes": true,
+        "enableLooseMode": false,
+        "allowSpecialUseDomain": true,
+        "prefixSecurity": "silent",
+        "cookies": []
+      },
+      "userData": {},
+      "maxErrorScore": 3,
+      "errorScoreDecrement": 0.5,
+      "expiresAt": "2026-08-23T07:18:15.131Z",
+      "createdAt": "2026-08-23T06:28:15.131Z",
+      "usageCount": 0,
+      "maxUsageCount": 50,
+      "errorScore": 0
+    },
+    {
+      "id": "session_Kr7osf6nRe",
+      "cookieJar": {
+        "version": "tough-cookie@6.0.2",
+        "storeType": "MemoryCookieStore",
+        "rejectPublicSuffixes": true,
+        "enableLooseMode": false,
+        "allowSpecialUseDomain": true,
+        "prefixSecurity": "silent",
+        "cookies": [
+          {
+            "key": "isMobile",
+            "value": "false",
+            "expires": "2026-08-23T07:18:18.996Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "isMobileDevice",
+            "value": "false",
+            "expires": "2026-08-23T07:18:18.996Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "storeShippingCode",
+            "value": "1",
+            "expires": "2026-08-23T07:18:18.996Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "storeCode",
+            "value": "001",
+            "expires": "2026-08-23T07:18:18.996Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_vwo_uuid_v2",
+            "value": "D08FBDCC8F3D1B33EE47216D0703187C6|6355d291d5f9c2e0288d25609d9f2682",
+            "expires": "2027-08-24T06:28:16.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_vwo_uuid",
+            "value": "D08FBDCC8F3D1B33EE47216D0703187C6",
+            "expires": "2027-08-23T12:17:28.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_vwo_sn",
+            "value": "0%3A1%3A%3A%3A%3A%3A%3A1787466490190",
+            "expires": "2026-08-23T06:58:16.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_vwo_ds",
+            "value": "3%241787466490%3A55.88388192%3A%3A%3A%3A%3A1787466490%3A1787466490%3A1",
+            "expires": "2026-09-22T06:28:16.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_vis_opt_s",
+            "value": "1%7C",
+            "expires": "2026-12-01T06:28:16.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_vis_opt_test_cookie",
+            "value": "1",
+            "expires": "2026-08-23T07:18:18.996Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_dd_s",
+            "value": "rum=0&expire=1787467396562&logs=0",
+            "expires": "2026-08-23T06:43:16.000Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "goto",
+            "value": "%2F",
+            "expires": "2026-08-23T07:18:18.996Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "campaign_retail_events",
+            "value": "true",
+            "expires": "2026-08-23T07:18:18.996Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "campaign_sponsored_autocomplete",
+            "value": "false",
+            "expires": "2026-08-23T06:38:16.733Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "GTMUtmTimestamp",
+            "value": "1787466496749",
+            "expires": "2027-02-19T06:28:16.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "GTMUtmSource",
+            "value": "google",
+            "expires": "2027-02-19T06:28:16.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "GTMUtmMedium",
+            "value": "cpc",
+            "expires": "2027-02-19T06:28:16.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "GTMUtmCampaign",
+            "value": "auto",
+            "expires": "2027-02-19T06:28:16.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "GTMGclid",
+            "value": "CjwKCAjwkaXUBhASEiwAZI3dszTp30yNFUa8s-ugyXVlt15y-WXLOKGJjVz5bWhv5sdbhQ92AEbcMRoCH68QAvD_BwE",
+            "expires": "2027-02-19T06:28:16.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "GTMGbraid",
+            "value": "0AAAAADx-HyHwNOrdyP2jic9GseVlfjwEX",
+            "expires": "2027-02-19T06:28:16.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_gcl_aw",
+            "value": "GCL.1787466497.CjwKCAjwkaXUBhASEiwAZI3dszTp30yNFUa8s-ugyXVlt15y-WXLOKGJjVz5bWhv5sdbhQ92AEbcMRoCH68QAvD_BwE",
+            "expires": "2026-11-21T06:28:16.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_gcl_dc",
+            "value": "GCL.1787466497.CjwKCAjwkaXUBhASEiwAZI3dszTp30yNFUa8s-ugyXVlt15y-WXLOKGJjVz5bWhv5sdbhQ92AEbcMRoCH68QAvD_BwE",
+            "expires": "2026-11-21T06:28:16.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_gcl_gs",
+            "value": "2.1.k1$i1787466495$u10327215",
+            "expires": "2026-11-21T06:28:16.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "AwinChannelCookie",
+            "value": "other",
+            "expires": "2026-08-23T07:18:18.996Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "campaign_sponsored_product",
+            "value": "true",
+            "expires": "2026-08-23T06:33:16.885Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "__rtbh.lid",
+            "value": "%7B%22eventType%22%3A%22lid%22%2C%22id%22%3A%22B4It3CdnIfjEgmV79UG9%22%2C%22expiryDate%22%3A%222027-08-23T06%3A28%3A16.979Z%22%7D",
+            "expires": "2027-08-23T06:28:16.000Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": true,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "ServerAwinChannelCookie",
+            "value": "other",
+            "expires": "2026-08-23T07:18:18.996Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "httpOnly": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "lantern",
+            "value": "e39b91ba-fedb-47bf-8e44-09c2a064f4b4",
+            "expires": "2026-09-22T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_clck",
+            "value": "4j5y44%5E2%5Eg8u%5E0%5E2426",
+            "expires": "2027-08-23T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "AdoptConsent",
+            "value": "N4Ig7gpgRgzglgFwgSQCIgFwgCa4MwCsAxngIwC0ATBAIYTkAsU29NDAbHue0QGaeUCAdgCcpIgRAAaEADc48BAHsATsmyYQeABzsGIwdvI1seBo14EADOW3aiNY9soii2qHl7arEaSCUADgjIAHYAKjQA5jCYANoAujKBCADyAK4IEdFxiSBESiEwECHBGlhpANJCAI7k6DIQssWZAJ4Bvlhg7nAAEgBeEAByfvmFzQBqECrwBZhCMmkB2DRI2ACCCJqUVpTs5FZGlHhhVuwYlNoYpEIAdKcEAFogAL5AA=",
+            "expires": "2026-10-22T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "AdoptVisitorId",
+            "value": "MwDgbALAnATArCAtAQwCbAoiAzOAGREEAY2RRBimJACNhsQ8BTIA",
+            "expires": "2026-10-22T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "session",
+            "value": "60694ee8984eea6f7423d46f40a83bd9",
+            "expires": "2026-08-23T07:18:18.996Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "miniCartFeatureFlag",
+            "value": "true",
+            "expires": "2026-08-23T06:38:17.114Z",
+            "domain": "www.kabum.com.br",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_ga",
+            "value": "GA1.1.1536175768.1787466497",
+            "expires": "2027-09-27T06:28:17.179Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_tt_enable_cookie",
+            "value": "1",
+            "expires": "2027-09-17T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_ttp",
+            "value": "01M0PMWF7T29XJK2642DGNV4QN_.tt.2",
+            "expires": "2027-09-17T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_hjSessionUser_1351489",
+            "value": "eyJpZCI6ImE0NWEwNmI3LWQ5Y2QtNTkzYy1hZDdmLWE0MTc3MWY2ZjVmNiIsImNyZWF0ZWQiOjE3ODc0NjY0OTczMzksImV4aXN0aW5nIjpmYWxzZX0=",
+            "expires": "2027-08-23T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_hjSession_1351489",
+            "value": "eyJpZCI6Ijk0NTAzOWI1LTFlOGUtNDY1MC1hZTBhLWYwOTJmOThlYzJkZSIsImMiOjE3ODc0NjY0OTczNDEsInMiOjAsInIiOjAsInNiIjowLCJzciI6MCwic2UiOjAsImZzIjoxLCJzcCI6MH0=",
+            "expires": "2026-08-23T06:58:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_pin_unauth",
+            "value": "dWlkPVkySTBaalU0TjJRdE9XVXdNUzAwWm1KakxXSXpOREl0TlRNME5tTmxaVFUxTVRrMQ",
+            "expires": "2027-08-23T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "_gcl_au",
+            "value": "1.1.1958790080.1787466497.-.-.1787466497.1486715409.1787466497.1787466497",
+            "expires": "2026-11-21T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.997Z",
+            "lastAccessed": "2026-08-23T06:28:18.997Z"
+          },
+          {
+            "key": "afUserId",
+            "value": "d3ff76a4-9984-42b3-96d8-c28d80d216b0-p",
+            "expires": "2027-09-27T06:28:17.435Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.998Z",
+            "lastAccessed": "2026-08-23T06:28:18.998Z"
+          },
+          {
+            "key": "_ga_Q68S4NB67S",
+            "value": "GS2.1.s1787466497$o1$g0$t1787466497$j60$l0$h0$dEtMm3KzW1A4unCFNRnhIQmn_EEhdrym5og",
+            "expires": "2027-09-27T06:28:17.523Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.998Z",
+            "lastAccessed": "2026-08-23T06:28:18.998Z"
+          },
+          {
+            "key": "_uetsid",
+            "value": "d3d7cee09ebb11f18e8027512639bca3",
+            "expires": "2026-08-24T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.998Z",
+            "lastAccessed": "2026-08-23T06:28:18.998Z"
+          },
+          {
+            "key": "_uetvid",
+            "value": "d3d7ff409ebb11f1987aa9f2fa4db469",
+            "expires": "2027-09-17T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.998Z",
+            "lastAccessed": "2026-08-23T06:28:18.998Z"
+          },
+          {
+            "key": "_fbp",
+            "value": "fb.2.1787466497561.448656758105273980",
+            "expires": "2026-11-21T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.998Z",
+            "lastAccessed": "2026-08-23T06:28:18.998Z"
+          },
+          {
+            "key": "_clsk",
+            "value": "tgpj6q%5E1787466497579%5E1%5E0%5Ez.clarity.ms%2Fcollect",
+            "expires": "2026-08-24T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.998Z",
+            "lastAccessed": "2026-08-23T06:28:18.998Z"
+          },
+          {
+            "key": "AF_SYNC",
+            "value": "1787466497636",
+            "expires": "2026-08-30T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.998Z",
+            "lastAccessed": "2026-08-23T06:28:18.998Z"
+          },
+          {
+            "key": "ttcsid",
+            "value": "1787466497280::s5bQ-g80ha-Dphh5QE7c.1.1787466497866.0::1.-1894.0::0.0.0.0::0.0.0",
+            "expires": "2027-09-17T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.998Z",
+            "lastAccessed": "2026-08-23T06:28:18.998Z"
+          },
+          {
+            "key": "ttcsid_C8LBSBCB7AN1JESF8SU0",
+            "value": "1787466497279::f4KULLZ41-gbjiHyxIi6.1.1787466497867.0",
+            "expires": "2027-09-17T06:28:17.000Z",
+            "domain": "kabum.com.br",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-08-23T06:28:18.998Z",
+            "lastAccessed": "2026-08-23T06:28:18.998Z"
+          }
+        ]
+      },
+      "userData": {},
+      "maxErrorScore": 3,
+      "errorScoreDecrement": 0.5,
+      "expiresAt": "2026-08-23T07:18:15.134Z",
+      "createdAt": "2026-08-23T06:28:15.134Z",
+      "usageCount": 1,
+      "maxUsageCount": 50,
+      "errorScore": 0
+    }
+  ]
+}

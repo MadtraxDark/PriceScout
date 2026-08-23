@@ -6,7 +6,7 @@ export type StoreDetection = {
 
 // A loja só é suportada quando existir um scraper implementado e registrado aqui.
 // Não incluir domínios fictícios ou de demonstração neste registro.
-const SCRAPER_REGISTRY = new Set<string>();
+const SCRAPER_REGISTRY = new Set<string>(["kabum.com.br"]);
 
 export function detectStoreFromUrl(value: string): StoreDetection | null {
   if (!value.trim()) return null;
