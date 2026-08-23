@@ -298,6 +298,47 @@ O botão seguro é `Manter produto`, que restaura o último link revisado. `Desc
 
 - objective: reconhecer o produto pelo slug antes da coleta e comunicar as etapas do scraper na tela.
 - status: completed
+
+## Ajuste de enquadramento dos cards do catálogo
+
+- objective: padronizar largura, altura, zonas de mídia e conteúdo dos cards, eliminando overflow do nome e desalinhamento da ação.
+- status: completed
+- checklist:
+  - [completed] fixar altura do card e altura da área de imagem por breakpoint;
+  - [completed] aplicar `box-sizing`, `overflow: hidden` e `min-width: 0` nas zonas críticas;
+  - [completed] limitar o título a três linhas com `line-clamp` e ellipsis;
+  - [completed] manter “Ver informações” no rodapé via flexbox e `margin-top: auto`;
+  - [completed] preservar `object-fit: contain` e centralização da mídia;
+  - [completed] ajustar desktop, tablet e mobile;
+  - [completed] validar TypeScript, lint, build, detector visual e diff.
+- decision: usar uma geometria fixa de 360px no desktop, 340px no tablet/mobile em duas colunas e 390px no mobile estreito, sempre separando mídia e conteúdo.
+- validation:
+  - `npx tsc --noEmit`: passed;
+  - `npm run lint -- --quiet`: passed;
+  - `npm run build`: passed;
+  - detector Impeccable: `[]`;
+  - `git diff --check`: passed.
+- limitation: a conexão interativa com Chrome foi tentada, mas o navegador não estava disponível nesta sessão; a revisão final foi feita por validação local e inspeção estrutural do CSS.
+
+## Skeleton loading de imagens
+
+- objective: manter o espaço das imagens estável durante o carregamento no catálogo, preview, galeria, miniaturas e lightbox.
+- status: completed
+- checklist:
+  - [completed] preservar dimensões e proporções existentes dos containers de mídia;
+  - [completed] adicionar shimmer discreto enquanto a imagem não conclui o carregamento;
+  - [completed] fazer fade-in da imagem após `load`;
+  - [completed] exibir estado textual de erro após `error`;
+  - [completed] cobrir imagens inseridas dinamicamente no lightbox;
+  - [completed] respeitar `prefers-reduced-motion`;
+  - [completed] validar TypeScript, lint, build, detector visual e diff.
+- decision: usar monitoramento de eventos `load`/`error` no DOM para cobrir as imagens diretas da galeria existente, complementado por `MediaImage` no catálogo.
+- validation:
+  - `npx tsc --noEmit`: passed;
+  - `npm run lint -- --quiet`: passed;
+  - `npm run build`: passed;
+  - detector Impeccable: `[]`;
+  - `git diff --check`: passed.
 - started_at: 2026-08-22
 - decisions:
   - adicionar utilitário genérico `utils/scraping/product-url.ts`, sem depender de uma página ou produto específico;
@@ -963,3 +1004,53 @@ O botão seguro é `Manter produto`, que restaura o último link revisado. `Desc
   - `package-lock.json`
 - limitation: a validação visual interativa no Chrome não foi executada nesta etapa; o build de produção confirmou a compilação da rota `/admin` e dos endpoints usados pelo fluxo.
 - next_step: executar uma aprovação com produto real conectado ao Google Drive e observar as transições no painel administrativo.
+
+## Redesign da seção de catálogo
+
+- objective: substituir a listagem de produtos por cards em grade focados em imagem e nome, sem exibir loja, preço ou disponibilidade.
+- status: in_progress
+- started_at: 2026-08-23
+- checklist:
+  - [completed] ler as skills impeccable, frontend-design e chrome:control-chrome;
+  - [completed] inspecionar a implementação atual, API, migration e tokens visuais;
+  - [completed] definir grade responsiva com mídia padronizada e ação discreta;
+  - [completed] implementar cards de produto e manter linhas somente para lojas;
+  - [completed] persistir a primeira imagem real coletada no produto;
+  - [completed] validar TypeScript, lint, build, detector visual e diff;
+  - [completed] revisar a checklist e registrar limitações.
+- decision: a superfície de produtos representa o cadastro-base. O vínculo operacional existente com loja permanece fora do card e não é exposto na listagem.
+- tools: skills locais impeccable, frontend-design, chrome:control-chrome; apply_patch; comandos locais de TypeScript, lint, build e detector.
+- limitation: a conexão com Chrome foi tentada, mas o módulo indicado pela skill não estava no caminho esperado; o arquivo foi localizado em outra pasta do plugin, porém a inicialização do runtime não ficou disponível nesta sessão.
+- validation:
+  - `npx tsc --noEmit`: passed;
+  - `npm run lint -- --quiet`: passed;
+  - `npm run build`: passed;
+  - `node .agents/skills/impeccable/scripts/detect.mjs --json --scope layout app/admin/page.tsx app/globals.css`: retornou `[]`;
+  - `git diff --check`: passed;
+  - verificação textual confirmou que a renderização de cards de produtos não contém loja, preço ou disponibilidade.
+- status: completed
+- next_step: aplicar a migration `20260823000006_add_catalog_product_image.sql` no ambiente Supabase antes de cadastrar novos produtos com imagem.
+
+## Correção de armazenamento de imagens no Google Drive
+
+- objective: remover a dependência de URL da fonte raspada no catálogo e usar somente referência de arquivo do Google Drive.
+- status: in_progress
+- started_at: 2026-08-23
+- checklist:
+  - [completed] revisar as skills Supabase e PostgreSQL antes da alteração de schema;
+  - [completed] substituir `image_url` por `google_drive_file_id` no produto;
+  - [completed] criar endpoint server-side para servir a imagem pelo Drive usando a referência persistida;
+  - [completed] conectar o ID retornado pelo upload ao cadastro canônico;
+  - [completed] validar ausência de Base64, Blob e bytes no banco, TypeScript, lint, build e diff.
+- decision: o banco armazenará apenas o ID do arquivo no Google Drive; a aplicação usará uma rota autenticada para buscar os bytes diretamente do Drive quando precisar exibir a imagem.
+- validation:
+  - migration remota não destrutiva aplicada com sucesso para adicionar `catalog_products.google_drive_file_id`;
+  - backfill remoto confirmou referência do Drive para 2 de 2 produtos existentes;
+  - `npx tsc --noEmit`: passed;
+  - `npm run lint -- --quiet`: passed;
+  - `npm run build`: passed;
+  - detector Impeccable: `[]`;
+  - `git diff --check`: passed;
+  - código de persistência não grava mais `imageUrl`, `source_url` ou `source_image_url`; buffers existem somente no fluxo server-side de upload/download.
+- limitation: colunas legadas `source_url` e `source_image_url` permanecem no banco remoto para evitar exclusão irreversível; o código novo não as preenche. A remoção poderá ser feita em migration destrutiva separada, após backup e aprovação explícita.
+- status: completed

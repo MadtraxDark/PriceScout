@@ -41,3 +41,9 @@ Transições curtas para estados de operação e uma pulsação lenta apenas na 
 - Sem texto genérico de marketing ou valores falsamente precisos.
 - Sem sobreposição de conteúdo, labels flutuantes ou ícones Unicode.
 - É estritamente proibido usar dados mockados, fictícios, de exemplo ou hardcoded na interface. Sem dados reais, usar estado vazio, carregamento ou configuração.
+
+## Superfície de catálogo
+
+- Produtos cadastrados são representados como produto-base: o card exibe somente imagem, nome e a ação discreta de informações.
+- Loja, preço, disponibilidade e demais ofertas permanecem fora da listagem visual principal, preservando espaço para múltiplas ofertas futuras por produto.
+- A grade usa imagem real persistida quando disponível e estado explícito de imagem ausente quando não houver mídia confirmada.

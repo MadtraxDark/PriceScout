@@ -16,7 +16,8 @@ export async function GET() {
     console.error("Falha ao listar produtos do catálogo.");
     return NextResponse.json({ error: "Não foi possível carregar os produtos." }, { status: 500 });
   }
-  return NextResponse.json({ products: data ?? [] });
+  const products = (data ?? []).map((product) => ({ ...product, image_url: product.google_drive_file_id ? `/api/integrations/google-drive/image?fileId=${encodeURIComponent(product.google_drive_file_id)}` : null }));
+  return NextResponse.json({ products });
 }
 
 export async function POST(request: Request) {
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
       external_product_id: externalProductId,
       product_url: productUrl,
       name,
+      google_drive_file_id: typeof body.googleDriveFileId === "string" ? body.googleDriveFileId.trim() || null : null,
       brand: typeof body.brand === "string" ? body.brand.trim() || null : null,
       original_price: typeof body.originalPrice === "number" ? body.originalPrice : null,
       pix_price: typeof body.pixPrice === "number" ? body.pixPrice : null,

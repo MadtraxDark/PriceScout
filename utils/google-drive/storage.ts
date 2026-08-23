@@ -61,7 +61,7 @@ export async function uploadProductImages(input: { userId: string; source: strin
       const sourceName = image.url.split("/").pop()?.split("?")[0] || `imagem-${index + 1}`;
       const name = `${String(index + 1).padStart(2, "0")}-${cleanFileName(sourceName.replace(/\.[^.]+$/, ""))}.${extensionForMime(downloaded.contentType)}`;
       const uploaded = await uploadDriveFile(connection, imagesFolder, name, downloaded.contentType, downloaded.bytes);
-      const insert = await supabase.from("google_drive_files").insert({ user_id: input.userId, drive_file_id: uploaded.id, drive_folder_id: imagesFolder, name, mime_type: downloaded.contentType, byte_size: downloaded.bytes.byteLength, sha256, source_url: image.url }).select("id,drive_file_id,name,sha256").single();
+      const insert = await supabase.from("google_drive_files").insert({ user_id: input.userId, drive_file_id: uploaded.id, drive_folder_id: imagesFolder, name, mime_type: downloaded.contentType, byte_size: downloaded.bytes.byteLength, sha256 }).select("id,drive_file_id,name,sha256").single();
       if (insert.error?.code === "23505") {
         const duplicate = await supabase.from("google_drive_files").select("id,drive_file_id,name,sha256").eq("user_id", input.userId).eq("sha256", sha256).single();
         if (duplicate.error) throw duplicate.error;
@@ -72,7 +72,7 @@ export async function uploadProductImages(input: { userId: string; source: strin
       else file = insert.data;
     }
     if (!file) throw new Error("Não foi possível registrar o arquivo do Google Drive.");
-    const relation = await supabase.from("google_drive_product_files").upsert({ user_id: input.userId, product_source: input.source, external_product_id: input.productId, product_url: input.productUrl, drive_file_id: file.id, sort_order: index, source_image_url: image.url }, { onConflict: "user_id,product_source,external_product_id,drive_file_id" });
+    const relation = await supabase.from("google_drive_product_files").upsert({ user_id: input.userId, product_source: input.source, external_product_id: input.productId, product_url: input.productUrl, drive_file_id: file.id, sort_order: index }, { onConflict: "user_id,product_source,external_product_id,drive_file_id" });
     if (relation.error) throw relation.error;
     results.push({ fileId: file.id, driveFileId: file.drive_file_id, sha256: file.sha256, reused, name: file.name });
   }

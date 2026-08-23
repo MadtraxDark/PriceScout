@@ -57,3 +57,10 @@ export async function updateDriveFile(connection: { refresh_token_ciphertext: st
 export async function deleteDriveFile(connection: { refresh_token_ciphertext: string }, fileId: string) {
   await driveFetch<Record<string, never>>(connection, `files/${encodeURIComponent(fileId)}?supportsAllDrives=true`, { method: "DELETE" });
 }
+
+export async function downloadDriveFile(connection: { refresh_token_ciphertext: string }, fileId: string) {
+  const token = await getGoogleAccessToken(connection.refresh_token_ciphertext);
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`, { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!response.ok) throw new Error(`Google Drive respondeu ${response.status} ao carregar a imagem.`);
+  return { bytes: Buffer.from(await response.arrayBuffer()), contentType: response.headers.get("content-type")?.split(";")[0].trim() || "application/octet-stream" };
+}

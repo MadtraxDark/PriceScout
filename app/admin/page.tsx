@@ -12,7 +12,7 @@ type View = "overview" | "products" | "stores" | "product" | "store";
 type ScrapeStatus = "idle" | "loading" | "ready" | "error";
 type ImportStepStatus = "pending" | "active" | "completed" | "error";
 type ImportStep = { id: string; label: string; status: ImportStepStatus };
-type CatalogProduct = { id: string; name: string; brand: string | null; product_url: string; source: string; external_product_id: string; availability: string; pix_price: number | null; updated_at: string; store?: { name: string; hostname: string } | null };
+type CatalogProduct = { id: string; name: string; image_url: string | null; brand: string | null; product_url: string; source: string; external_product_id: string; availability: string; pix_price: number | null; updated_at: string; store?: { name: string; hostname: string } | null };
 type CatalogStore = { id: string; name: string; hostname: string; url: string; productCount: number; updated_at: string };
 
 const scrapeProgressMessages = [
@@ -61,6 +61,14 @@ function Icon({ name }: { name: "grid" | "box" | "store" | "bell" | "plus" | "ar
 
 function Logo() { return <div className="logo"><span className="logo-mark"><span /></span><span>price<span className="logo-accent">scout</span></span></div>; }
 
+function MediaImage({ src, alt, className = "", fallback = "Imagem indisponível" }: { src: string; alt: string; className?: string; fallback?: string }) {
+  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
+  return <span className={`media-image ${className} ${status}`} aria-busy={status === "loading"}>
+    {status === "loading" && <span className="media-skeleton" aria-hidden="true" />}
+    {status === "error" ? <span className="media-error"><Icon name="box" /><span>{fallback}</span></span> : <img src={src} alt={alt} onLoad={() => setStatus("loaded")} onError={() => setStatus("error")} />}
+  </span>;
+}
+
 const navItems: { id: View; label: string; icon: "grid" | "box" | "store" }[] = [
   { id: "overview", label: "Visão geral", icon: "grid" },
   { id: "products", label: "Produtos cadastrados", icon: "box" },
@@ -101,6 +109,34 @@ export default function Home() {
     if (!importing || !importPanelRef.current) return;
     gsap.fromTo(importPanelRef.current, { opacity: 0.72, y: 6 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" });
   }, [importing, importSteps]);
+
+  useEffect(() => {
+    const markImage = (image: HTMLImageElement, state: "loaded" | "error") => {
+      image.classList.remove("image-loaded", "image-error");
+      image.classList.add(`image-${state}`);
+    };
+    const handleImageLoad = (event: Event) => {
+      const image = event.target;
+      if (image instanceof HTMLImageElement) markImage(image, "loaded");
+    };
+    const handleImageError = (event: Event) => {
+      const image = event.target;
+      if (image instanceof HTMLImageElement) markImage(image, "error");
+    };
+    const scanCompleteImages = () => document.querySelectorAll<HTMLImageElement>("img").forEach((image) => {
+      if (image.complete) markImage(image, image.naturalWidth > 0 ? "loaded" : "error");
+    });
+    const observer = new MutationObserver(scanCompleteImages);
+    scanCompleteImages();
+    observer.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("load", handleImageLoad, true);
+    document.addEventListener("error", handleImageError, true);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("load", handleImageLoad, true);
+      document.removeEventListener("error", handleImageError, true);
+    };
+  }, [catalogProducts, scrapedProduct]);
 
   useEffect(() => {
     if (!scrapedProduct || !previewRef.current) {
@@ -194,6 +230,7 @@ export default function Home() {
     let taxonomyCount = 0;
     let reusedCount = 0;
     let uploadedCount = 0;
+    let googleDriveFileId: string | null = null;
     let currentStepId = "dedupe";
     try {
       currentStepId = "dedupe";
@@ -205,19 +242,20 @@ export default function Home() {
         currentStepId = "upload";
         setStep(currentStepId, "active");
         const driveResponse = await fetch("/api/integrations/google-drive/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: scrapedProduct.source, productId: scrapedProduct.productId, productUrl: scrapedProduct.url, productName: scrapedProduct.name, brand: scrapedProduct.brand, images: scrapedProduct.images }) });
-        const driveResult = await driveResponse.json() as { files?: Array<{ reused?: boolean }>; error?: string; reauthorizationRequired?: boolean };
+        const driveResult = await driveResponse.json() as { files?: Array<{ driveFileId?: string; reused?: boolean }>; error?: string; reauthorizationRequired?: boolean };
         if (!driveResponse.ok) { if (driveResult.reauthorizationRequired) setDriveConnected(false); throw new Error(driveResult.error || "As imagens não puderam ser armazenadas no Google Drive."); }
         completeStep("dedupe");
         completeStep("upload");
         completeStep("relations");
         uploadedCount = driveResult.files?.length ?? 0;
         reusedCount = driveResult.files?.filter((file) => file.reused).length ?? 0;
+        googleDriveFileId = driveResult.files?.[0]?.driveFileId ?? null;
         setDriveConnected(true);
       }
 
       currentStepId = "product";
       setStep(currentStepId, "active");
-      const catalogResponse = await fetch("/api/catalog/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: scrapedProduct.source, productId: scrapedProduct.productId, productUrl: scrapedProduct.url, name: scrapedProduct.name, brand: scrapedProduct.brand, originalPrice: scrapedProduct.originalPrice, pixPrice: scrapedProduct.pixPrice, pixDiscountPercent: scrapedProduct.pixDiscountPercent, cardPrice: scrapedProduct.cardPrice, installmentsQuantity: scrapedProduct.installments?.quantity ?? null, installmentAmount: scrapedProduct.installments?.amount ?? null, priceDifferencePixToCard: scrapedProduct.priceDifferencePixToCard, availability: scrapedProduct.availability, stockQuantity: scrapedProduct.stockQuantity, seller: scrapedProduct.seller, specialStatus: scrapedProduct.special_status, shippingFrom: scrapedProduct.shipping_from, storeName: scrapedProduct.source === "kabum" ? "KaBuM!" : productUrlObject.hostname, storeUrl: productUrlObject.origin }) });
+      const catalogResponse = await fetch("/api/catalog/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: scrapedProduct.source, productId: scrapedProduct.productId, productUrl: scrapedProduct.url, name: scrapedProduct.name, googleDriveFileId, brand: scrapedProduct.brand, originalPrice: scrapedProduct.originalPrice, pixPrice: scrapedProduct.pixPrice, pixDiscountPercent: scrapedProduct.pixDiscountPercent, cardPrice: scrapedProduct.cardPrice, installmentsQuantity: scrapedProduct.installments?.quantity ?? null, installmentAmount: scrapedProduct.installments?.amount ?? null, priceDifferencePixToCard: scrapedProduct.priceDifferencePixToCard, availability: scrapedProduct.availability, stockQuantity: scrapedProduct.stockQuantity, seller: scrapedProduct.seller, specialStatus: scrapedProduct.special_status, shippingFrom: scrapedProduct.shipping_from, storeName: scrapedProduct.source === "kabum" ? "KaBuM!" : productUrlObject.hostname, storeUrl: productUrlObject.origin }) });
       const catalogResult = await catalogResponse.json() as { error?: string };
       if (!catalogResponse.ok) throw new Error(catalogResult.error || "O produto não pôde ser salvo no catálogo.");
       completeStep("product");
@@ -334,7 +372,7 @@ function money(value: number | null) {
 function CatalogView({ kind, openView, products, stores, loading }: { kind: "products" | "stores"; openView: (view: View) => void; products: CatalogProduct[]; stores: CatalogStore[]; loading: boolean }) {
   const isProducts = kind === "products";
   const rows = isProducts ? products : stores;
-  return <div className="catalog-page"><div className="page-intro"><div><p className="eyebrow">Catálogo</p><h1>{isProducts ? "Produtos cadastrados." : "Lojas cadastradas."}</h1><p className="intro-copy">{isProducts ? "Consulte os produtos confirmados na fonte oficial do catálogo." : "Consulte as lojas e sites confirmados como fontes oficiais."}</p></div><button className="primary-button" onClick={() => openView(isProducts ? "product" : "store")}><Icon name="plus" /> {isProducts ? "Adicionar produto" : "Adicionar site por link"}</button></div>{loading ? <section className="empty-state"><h2>Carregando registros...</h2></section> : rows.length === 0 ? <section className="empty-state"><span className="empty-icon"><Icon name={isProducts ? "box" : "store"} /></span><h2>Nenhum registro disponível</h2><p>{isProducts ? "Os produtos aparecerão aqui depois que forem cadastrados e aprovados." : "As lojas aparecerão aqui depois que forem cadastradas e aprovadas."}</p><button className="outline-button" onClick={() => openView(isProducts ? "product" : "store")}><Icon name="plus" /> {isProducts ? "Cadastrar produto" : "Adicionar site por link"}</button></section> : <section className="catalog-list">{isProducts ? products.map((product) => <article className="catalog-row" key={product.id}><div className="catalog-row-icon"><Icon name="box" /></div><div className="catalog-row-main"><strong>{product.name}</strong><span>{product.brand || "Marca não informada"} · {product.store?.name || product.store?.hostname || "Loja não informada"}</span></div><div className="catalog-row-meta"><b>{product.availability === "in_stock" ? "Em estoque" : product.availability === "out_of_stock" ? "Fora de estoque" : "Disponibilidade não informada"}</b><span>{product.pix_price === null ? "PIX não informado" : `PIX ${money(product.pix_price)}`}</span></div><a className="catalog-row-link" href={product.product_url} target="_blank" rel="noreferrer" aria-label={`Abrir ${product.name}`}><Icon name="external" /></a></article>) : stores.map((store) => <article className="catalog-row" key={store.id}><div className="catalog-row-icon"><Icon name="store" /></div><div className="catalog-row-main"><strong>{store.name}</strong><span>{store.hostname}</span></div><div className="catalog-row-meta"><b>{store.productCount} {store.productCount === 1 ? "produto" : "produtos"}</b><span>{store.url}</span></div><a className="catalog-row-link" href={store.url} target="_blank" rel="noreferrer" aria-label={`Abrir ${store.name}`}><Icon name="external" /></a></article>)}</section>}</div>;
+  return <div className="catalog-page"><div className="page-intro"><div><p className="eyebrow">Catálogo</p><h1>{isProducts ? "Produtos cadastrados." : "Lojas cadastradas."}</h1><p className="intro-copy">{isProducts ? "Identifique rapidamente cada produto pela imagem e pelo nome." : "Consulte as lojas e sites confirmados como fontes oficiais."}</p></div><button className="primary-button" onClick={() => openView(isProducts ? "product" : "store")}><Icon name="plus" /> {isProducts ? "Adicionar produto" : "Adicionar site por link"}</button></div>{loading ? <section className="empty-state"><h2>Carregando registros...</h2></section> : rows.length === 0 ? <section className="empty-state"><span className="empty-icon"><Icon name={isProducts ? "box" : "store"} /></span><h2>Nenhum registro disponível</h2><p>{isProducts ? "Os produtos aparecerão aqui depois que forem cadastrados e aprovados." : "As lojas aparecerão aqui depois que forem cadastradas e aprovadas."}</p><button className="outline-button" onClick={() => openView(isProducts ? "product" : "store")}><Icon name="plus" /> {isProducts ? "Cadastrar produto" : "Adicionar site por link"}</button></section> : isProducts ? <section className="catalog-grid" aria-label="Produtos cadastrados">{products.map((product) => <article className="catalog-card" key={product.id}><div className="catalog-card-media">{product.image_url ? <MediaImage key={product.image_url} src={product.image_url} alt="" className="catalog-media-image" /> : <span className="catalog-card-media-empty"><Icon name="box" /><span>Imagem não disponível</span></span>}</div><div className="catalog-card-body"><h2>{product.name}</h2><a className="catalog-card-link" href={product.product_url} target="_blank" rel="noreferrer">Ver informações <Icon name="external" /></a></div></article>)}</section> : <section className="catalog-list">{stores.map((store) => <article className="catalog-row" key={store.id}><div className="catalog-row-icon"><Icon name="store" /></div><div className="catalog-row-main"><strong>{store.name}</strong><span>{store.hostname}</span></div><div className="catalog-row-meta"><b>{store.productCount} {store.productCount === 1 ? "produto" : "produtos"}</b><span>{store.url}</span></div><a className="catalog-row-link" href={store.url} target="_blank" rel="noreferrer" aria-label={`Abrir ${store.name}`}><Icon name="external" /></a></article>)}</section>}</div>;
 }
 
 function FormView({ view, notice, onSubmit, productUrl, onProductUrlChange, storeName, setStoreName, storeUrl, setStoreUrl, scrapeStatus, scrapedProduct, scrapeError, approvedPreview, onApprove, progressMessage, previewVisible, onRevealPreview, previewRef, importing, importSteps, importError, importPanelRef, importSuccessRef }: { view: "product" | "store"; notice: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; productUrl: string; onProductUrlChange: (value: string) => void; storeName: string; setStoreName: (value: string) => void; storeUrl: string; setStoreUrl: (value: string) => void; scrapeStatus: ScrapeStatus; scrapedProduct: KabumProduct | null; scrapeError: string; approvedPreview: boolean; onApprove: () => void; progressMessage: string; previewVisible: boolean; onRevealPreview: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; importSteps: ImportStep[]; importError: string; importPanelRef: RefObject<HTMLDivElement | null>; importSuccessRef: RefObject<HTMLDivElement | null> }) {
