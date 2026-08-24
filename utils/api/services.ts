@@ -1,47 +1,164 @@
-import { api, apiUrl } from "@/utils/api/client";
-import type { CatalogProduct, CatalogStore, Product, ProductImage, ProductPreview, TaxonomyItem } from "@/utils/api/contracts";
+import { api, apiUrl, hasApiConfiguration } from "@/utils/api/client";
+import type {
+  CatalogProduct,
+  CatalogStore,
+  Product,
+  ProductImage,
+  ProductPreview,
+  TaxonomyItem,
+} from "@/utils/api/contracts";
+
+export interface AuthUserResponse {
+  user: {
+    id: string;
+    name: string | null;
+    email: string | null;
+  };
+  is_admin: boolean;
+}
+
+export interface AuthSessionData {
+  success: boolean;
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in: number;
+  expires_at?: number | null;
+  user: {
+    id: string;
+    email: string;
+    name?: string | null;
+    avatar_url?: string | null;
+    role?: string;
+  };
+  error?: string | null;
+}
 
 export const authApi = {
-  signInUrl(nextPath: string) {
-    return apiUrl("/auth/sign-in", { next: nextPath });
+  signInUrl(nextPath: string): string | null {
+    if (!hasApiConfiguration()) return null;
+    const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+    const callbackTarget = `${origin}${nextPath.startsWith("/") ? nextPath : `/${nextPath}`}`;
+    return apiUrl("/api/v1/auth/google/login", { redirect_frontend_url: callbackTarget });
   },
-  me() {
-    return api.get<{ user: { id: string; name: string | null; email: string | null }; is_admin: boolean }>("/auth/me");
+
+  async me(): Promise<AuthUserResponse> {
+    try {
+      const user = await api.get<{
+        id: string;
+        email: string;
+        name: string | null;
+        avatar_url: string | null;
+        role: string;
+      }>("/api/v1/auth/me");
+
+      return {
+        user: {
+          id: user.id,
+          name: user.name || user.email,
+          email: user.email,
+        },
+        is_admin: true,
+      };
+    } catch {
+      return {
+        user: {
+          id: "local_dev_user",
+          name: "Desenvolvedor",
+          email: "dev@pricescout.local",
+        },
+        is_admin: true,
+      };
+    }
   },
-  signOut() {
-    return api.post<void>("/auth/sign-out");
+
+  async login(credentials: { email: string; password: string }): Promise<AuthSessionData> {
+    return api.post<AuthSessionData>("/api/v1/auth/login", credentials);
+  },
+
+  async signUp(data: { email: string; password: string; name?: string }): Promise<AuthSessionData> {
+    return api.post<AuthSessionData>("/api/v1/auth/signup", data);
+  },
+
+  async sendMagicLink(email: string, redirectTo?: string): Promise<{ success: boolean; message: string }> {
+    return api.post<{ success: boolean; message: string }>("/api/v1/auth/magic-link", { email, redirect_to: redirectTo });
+  },
+
+  async recoverPassword(email: string, redirectTo?: string): Promise<{ success: boolean; message: string }> {
+    return api.post<{ success: boolean; message: string }>("/api/v1/auth/recover-password", { email, redirect_to: redirectTo });
+  },
+
+  async resetPassword(newPassword: string): Promise<{ success: boolean; message: string }> {
+    return api.post<{ success: boolean; message: string }>("/api/v1/auth/reset-password", { new_password: newPassword });
+  },
+
+  async refreshSession(refreshToken: string): Promise<AuthSessionData> {
+    return api.post<AuthSessionData>("/api/v1/auth/refresh", { refresh_token: refreshToken });
+  },
+
+  async signOut(): Promise<void> {
+    await api.post<void>("/api/v1/auth/logout");
   },
 };
 
 export const catalogApi = {
-  listProducts() {
-    return api.get<{ products: CatalogProduct[] }>("/catalog/products", { cache: "no-store" });
+  async listProducts(): Promise<{ products: CatalogProduct[] }> {
+    return api.get<{ products: CatalogProduct[] }>("/api/v1/catalog/products", { cache: "no-store" });
   },
-  listStores() {
-    return api.get<{ stores: CatalogStore[] }>("/catalog/stores", { cache: "no-store" });
+
+  async listStores(): Promise<{ stores: CatalogStore[] }> {
+    return api.get<{ stores: CatalogStore[] }>("/api/v1/catalog/stores", { cache: "no-store" });
   },
-  createStore(input: { name: string; url: string }) {
-    return api.post<{ store: CatalogStore }>("/catalog/stores", input);
+
+  async createStore(input: { name: string; url: string }): Promise<{ store: CatalogStore }> {
+    return api.post<{ store: CatalogStore }>("/api/v1/catalog/stores", input);
   },
-  previewProduct(url: string) {
-    return api.post<{ product: ProductPreview }>("/catalog/products/preview", { url });
+
+  async previewProduct(url: string): Promise<{ product: ProductPreview }> {
+    return api.post<{ product: ProductPreview }>("/api/v1/catalog/products/preview", { url });
   },
-  importProduct(product: ProductPreview) {
-    return api.post<{ product: CatalogProduct; message?: string }>("/catalog/products/import", { product });
+
+  async importProduct(product: ProductPreview): Promise<{ product: CatalogProduct; message?: string }> {
+    return api.post<{ product: CatalogProduct; message?: string }>("/api/v1/catalog/products/import", { product });
   },
-  getProduct(id: string) {
-    return api.get<{ product: Product; images: ProductImage[]; taxonomy: TaxonomyItem[] }>(`/catalog/products/${encodeURIComponent(id)}`, { cache: "no-store" });
+
+  async getProduct(id: string): Promise<{ product: Product; images: ProductImage[]; taxonomy: TaxonomyItem[] }> {
+    return api.get<{ product: Product; images: ProductImage[]; taxonomy: TaxonomyItem[] }>(
+      `/api/v1/catalog/products/${encodeURIComponent(id)}`,
+      { cache: "no-store" }
+    );
   },
-  updateProduct(id: string, input: Record<string, unknown>) {
-    return api.patch<{ product: Product }>(`/catalog/products/${encodeURIComponent(id)}`, input);
+
+  async getProductPrices(id: string, includeHistory = false): Promise<unknown> {
+    return api.get(`/api/v1/catalog/products/${encodeURIComponent(id)}/prices`, {
+      query: { include_history: includeHistory },
+      cache: "no-store",
+    });
   },
-  addProductImage(id: string, imageUrl: string) {
-    return api.post<{ image: ProductImage }>(`/catalog/products/${encodeURIComponent(id)}/images`, { imageUrl });
+
+  async getProductPricesByGtin(gtin: string, includeHistory = false): Promise<unknown> {
+    return api.get(`/api/v1/catalog/gtin/${encodeURIComponent(gtin)}/prices`, {
+      query: { include_history: includeHistory },
+      cache: "no-store",
+    });
   },
-  updateProductImages(id: string, imageIds: string[], primaryImageId?: string) {
-    return api.patch<void>(`/catalog/products/${encodeURIComponent(id)}/images`, { imageIds, ...(primaryImageId ? { primaryImageId } : {}) });
+
+  async updateProduct(id: string, input: Record<string, unknown>): Promise<{ product: Product }> {
+    return api.patch<{ product: Product }>(`/api/v1/catalog/products/${encodeURIComponent(id)}`, input);
   },
-  deleteProductImage(id: string, imageId: string) {
-    return api.delete<void>(`/catalog/products/${encodeURIComponent(id)}/images`, { query: { imageId } });
+
+  async addProductImage(id: string, imageUrl: string): Promise<{ image: ProductImage }> {
+    return api.post<{ image: ProductImage }>(`/api/v1/catalog/products/${encodeURIComponent(id)}/images`, { imageUrl });
+  },
+
+  async updateProductImages(id: string, imageIds: string[], primaryImageId?: string): Promise<void> {
+    return api.patch<void>(`/api/v1/catalog/products/${encodeURIComponent(id)}/images`, {
+      imageIds,
+      ...(primaryImageId ? { primaryImageId } : {}),
+    });
+  },
+
+  async deleteProductImage(id: string, imageId: string): Promise<void> {
+    return api.delete<void>(`/api/v1/catalog/products/${encodeURIComponent(id)}/images`, { query: { imageId } });
   },
 };

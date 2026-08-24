@@ -5,20 +5,20 @@ status: draft
 confidence: 1.0
 source: agent
 sources:
-  - memory/working/frontend-only-fastapi-migration.md
+  - memory/working/api-base-url-runtime-error.md
 created_at: 2026-08-24
 updated_at: 2026-08-24
 expires_at: null
 related:
-  - working_frontend_only_fastapi_migration
+  - working_api_base_url_runtime_error
 ---
 
 # Sessão atual
 
 ## Objetivo
 
-Preparar o PriceScout como frontend exclusivo conectado a uma API FastAPI externa.
+Corrigir a falha de renderização do login quando a URL pública da API não estiver configurada.
 
 ## Estado
 
-Consulte `memory/working/frontend-only-fastapi-migration.md` para checklist, decisões, fontes e validações desta sessão.
+Consulte `memory/working/api-base-url-runtime-error.md` para checklist, decisões, fontes e validações desta sessão.

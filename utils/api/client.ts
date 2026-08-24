@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, "");
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, "") ?? "";
 
 export class ApiError extends Error {
   constructor(
@@ -16,9 +16,23 @@ type RequestOptions = Omit<RequestInit, "body"> & {
   query?: Record<string, string | number | boolean | null | undefined>;
 };
 
+export function hasApiConfiguration(): boolean {
+  if (!API_BASE_URL) return false;
+
+  try {
+    const url = new URL(API_BASE_URL);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function requireApiBaseUrl(): string {
   if (!API_BASE_URL) {
     throw new Error("NEXT_PUBLIC_API_BASE_URL não está configurada.");
+  }
+  if (!hasApiConfiguration()) {
+    throw new Error("NEXT_PUBLIC_API_BASE_URL deve conter uma URL HTTP ou HTTPS válida.");
   }
   return API_BASE_URL;
 }
@@ -48,7 +62,21 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   if (body !== undefined && !isFormData && !requestHeaders.has("Content-Type")) {
     requestHeaders.set("Content-Type", "application/json");
   }
-  if (!requestHeaders.has("Accept")) requestHeaders.set("Accept", "application/json");
+  if (!requestHeaders.has("Accept")) {
+    requestHeaders.set("Accept", "application/json");
+  }
+
+  // Anexa automaticamente o token JWT se presente na sessao do navegador
+  if (!requestHeaders.has("Authorization") && typeof window !== "undefined") {
+    try {
+      const token = localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
+      if (token) {
+        requestHeaders.set("Authorization", `Bearer ${token}`);
+      }
+    } catch {
+      // Ignora erro de acesso ao storage
+    }
+  }
 
   const response = await fetch(apiUrl(path, query), {
     ...requestInit,
@@ -59,10 +87,11 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const payload = await parseResponse(response);
 
   if (!response.ok) {
-    const message = payload && typeof payload === "object" && "detail" in payload
-      ? String(payload.detail)
-      : payload && typeof payload === "object" && "error" in payload
-        ? String(payload.error)
+    const message =
+      payload && typeof payload === "object" && "detail" in payload
+        ? String((payload as { detail: unknown }).detail)
+        : payload && typeof payload === "object" && "error" in payload
+        ? String((payload as { error: unknown }).error)
         : `A API respondeu com status ${response.status}.`;
     throw new ApiError(message, response.status, payload);
   }
