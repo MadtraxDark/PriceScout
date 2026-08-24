@@ -1,52 +1,60 @@
-# PriceScout
+# PriceScout Frontend
 
-O PriceScout é uma memória persistente para agentes de IA, organizada como Markdown-first.
+Interface administrativa do PriceScout construída com Next.js. Este repositório contém somente responsabilidades de frontend; autenticação, autorização, coleta, persistência, produtos, preços, imagens e integrações pertencem à API externa desenvolvida com FastAPI.
 
-O backend planejado é Supabase, usando o PostgreSQL gerenciado como armazenamento operacional. Markdown continua sendo a fonte de verdade portátil e auditável.
+## Configuração
 
-## Organização
+Copie `.env.example` para `.env.local` e informe a origem pública da API, sem barra final:
 
-- `AGENTS.md`: regras operacionais do projeto.
-- `memory/working`: contexto temporário.
-- `memory/episodic`: eventos e sessões.
-- `memory/semantic`: fatos consolidados.
-- `memory/procedural`: procedimentos validados.
-- `memory/inbox`: memórias aguardando validação.
-- `docs/architecture.md`: arquitetura e ciclo de vida.
-- `docs/decisions/`: decisões arquiteturais registradas.
-- `supabase/`: regras e planejamento do backend Supabase/PostgreSQL.
+```env
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+```
 
-Markdown versionado é a fonte de verdade. Índices locais e embeddings, quando adicionados, serão derivados e recriáveis.
+O prefixo `NEXT_PUBLIC_` é necessário porque o valor é usado pelo navegador. Não coloque tokens, senhas, chaves de banco ou credenciais de provedores nessa variável ou em qualquer arquivo do frontend.
 
-Emojis são estritamente proibidos em todo o projeto.
+## Execução local
 
-## Política operacional
+```bash
+npm ci
+npm run dev
+```
 
-Decisões técnicas devem ser pesquisadas na internet e comparadas com documentação oficial e fontes práticas relevantes. Skills, MCPs e CLIs disponíveis devem ser descobertos e usados quando aplicáveis. Limitações de acesso ou de ferramenta devem ser registradas, nunca ocultadas.
+A interface fica disponível em `http://localhost:3000`. A API precisa permitir essa origem no CORS e aceitar credenciais quando a autenticação usar cookie HTTP-only.
+
+## Camada da API
+
+- `utils/api/client.ts`: URL base, serialização, cookies, parsing e erros HTTP.
+- `utils/api/services.ts`: operações por domínio consumidas pelas telas.
+- `utils/api/contracts.ts`: contratos TypeScript das respostas e payloads.
+
+Componentes e páginas não devem chamar `fetch` diretamente nem conhecer banco, storage ou provedores externos. Imagens devem usar URLs retornadas pela API.
+
+## Contrato esperado da FastAPI
+
+- `GET /auth/sign-in?next=...`
+- `GET /auth/me`
+- `POST /auth/sign-out`
+- `GET|POST /catalog/stores`
+- `GET /catalog/products`
+- `POST /catalog/products/preview`
+- `POST /catalog/products/import`
+- `GET|PATCH /catalog/products/{id}`
+- `POST|PATCH|DELETE /catalog/products/{id}/images`
+
+O endpoint de importação recebe a prévia aprovada e executa toda a operação no servidor de forma consistente. O frontend não coordena persistência, taxonomia ou arquivos separadamente.
+
+## Validação
+
+```bash
+npm run lint
+npm run build
+```
 
 ## Docker
 
-O projeto pode ser executado usando apenas a Docker CLI:
+Como variáveis `NEXT_PUBLIC_` são incorporadas ao bundle durante a build, informe a URL ao construir a imagem:
 
 ```bash
-docker build -t pricescout:local .
-docker run --rm --name pricescout -p 8080:80 pricescout:local
+docker build --build-arg NEXT_PUBLIC_API_BASE_URL=https://api.seu-dominio.example -t pricescout-frontend .
+docker run --rm -p 3000:3000 pricescout-frontend
 ```
-
-Acesse http://localhost:8080. Para executar em segundo plano:
-
-```bash
-docker run -d --name pricescout -p 8080:80 pricescout:local
-docker logs -f pricescout
-docker stop pricescout
-docker rm pricescout
-```
-
-Verificação rápida da imagem:
-
-```bash
-docker image inspect pricescout:local
-docker run --rm pricescout:local nginx -t
-```
-
-O `Dockerfile` usa Nginx Alpine como servidor HTTP para o conteúdo em `public/`. Quando a aplicação principal for adicionada, esse arquivo pode ser ajustado para o runtime e o comando de inicialização correspondentes.

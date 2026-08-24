@@ -1,89 +1,50 @@
-# Arquitetura de memória
+# Arquitetura do frontend
 
-## Princípio
+## Limite de responsabilidade
 
-O armazenamento é Markdown-first: cada memória é legível por pessoas, versionável com Git e recuperável por ferramentas simples. SQLite, BM25 e embeddings são apenas índices derivados.
-
-## Backend
-
-Supabase é o backend oficial. O PostgreSQL armazena a projeção operacional da memória, enquanto os arquivos Markdown continuam sendo a fonte portátil e auditável. Auth, RLS, Data API, Realtime e Edge Functions serão adicionados conforme cada requisito for implementado.
-
-O banco não deve receber uma entidade sem `id` estável, procedência, estado de ciclo de vida e timestamps compatíveis com a entrada Markdown correspondente.
-
-## Fonte única para produtos e preços
-
-O produto possui um registro canônico no PostgreSQL. Para cada produto e atributo canônico, como preço atual, nome ou disponibilidade normalizada, existe apenas um valor atual oficial.
-
-O scraper trabalha em duas etapas:
+Este projeto renderiza a interface e mantém apenas estado de apresentação. A API FastAPI é a autoridade exclusiva para autenticação, autorização, regras de produto, coleta de fontes, preços, taxonomia, persistência, arquivos e integrações.
 
 ```text
-página externa → observação bruta → validação → atualização do produto canônico
-                                      ↓
-                                  alerta/revisão
+página ou componente
+        |
+        v
+serviço de domínio em utils/api/services.ts
+        |
+        v
+cliente HTTP em utils/api/client.ts
+        |
+        v
+API FastAPI externa
 ```
 
-Uma página que não encontrou o preço, informa indisponibilidade ou retorna um valor incompatível gera uma observação com estado `not_found`, `unavailable` ou `invalid`. Ela não apaga nem substitui o último valor canônico confirmado.
+Não existem Route Handlers, migrations, SDK de banco, credenciais de storage ou rotinas de coleta neste repositório.
 
-A interface de venda lê exclusivamente o produto canônico do banco. A observação raspada pode ser exibida como evidência ou status de coleta, mas nunca como uma segunda origem concorrente do preço.
+## Requisições
 
-O histórico pode guardar mudanças anteriores, mas deve haver uma única linha ou projeção identificável como valor atual por produto e atributo. A implementação deverá usar chaves estáveis, restrições de unicidade, validações de domínio e transações para impedir duplicidade e atualizações parciais.
+`NEXT_PUBLIC_API_BASE_URL` define a origem da API. O cliente central:
 
-Todo o projeto deve usar texto simples. Emojis são estritamente proibidos em arquivos, memória, código, comentários e mensagens do agente.
+- compõe caminhos e query strings;
+- envia e recebe JSON;
+- inclui cookies com `credentials: "include"`;
+- converte respostas HTTP malsucedidas em `ApiError`;
+- preserva `FormData` quando uploads diretos forem adicionados.
 
-## Registro de execução
+As páginas usam serviços de domínio e não chamam `fetch` diretamente.
 
-Processos longos ou com múltiplas etapas devem manter um diário operacional em `memory/working/`. O diário deve conter objetivo, checklist, estado atual, decisões, ferramentas e fontes utilizadas, resultados, falhas, bloqueios e próximo passo. A atualização ocorre depois de cada etapa relevante e antes de uma nova etapa.
+## Autenticação
 
-Uma tarefa só pode ser considerada concluída quando a checklist estiver revisada. Itens não concluídos devem permanecer marcados como `pending` ou `blocked`, com a razão registrada.
+O login redireciona para `/auth/sign-in` na FastAPI. A sessão deve ser mantida em cookie HTTP-only, `Secure` em produção e com política `SameSite` compatível com os domínios implantados. O frontend não persiste tokens em armazenamento web.
 
-## Camadas
+Se frontend e API estiverem em origens diferentes, a FastAPI deve configurar CORS com a origem exata do frontend e suporte a credenciais. O curinga `*` não deve ser usado com cookies ou cabeçalhos de autorização.
 
-```text
-entrada → working → inbox → episodic → consolidação → semantic/procedural
-                                             ↓
-                                      índice de recuperação
-```
+## Dados e imagens
 
-### Working
+Produtos, lojas, preços, taxonomia e imagens são sempre lidos da API. URLs de imagens são contratos de resposta; componentes visuais não montam URLs de storage nem acessam provedores diretamente.
 
-Estado transitório da tarefa atual. Pode ser reescrito e deve permanecer pequeno.
+A aprovação da prévia usa uma única operação de importação. Transações, deduplicação, armazenamento de arquivos e atualização do registro canônico são responsabilidades internas da API.
 
-### Episodic
+## Fontes da decisão
 
-Registro cronológico do que aconteceu, com contexto suficiente para auditoria e consolidação posterior.
-
-### Semantic
-
-Fatos, preferências e entidades consolidados. Uma entrada deve expressar uma ideia principal e informar sua procedência.
-
-### Procedural
-
-Passos, estratégias e regras que já funcionaram. Promoção para este nível exige validação explícita.
-
-### Inbox
-
-Área de triagem para observações candidatas. Nada em `inbox/` deve ser tratado como verdade permanente.
-
-## Ciclo de vida
-
-1. Capturar a observação em `working/` ou `episodic/`.
-2. Classificar como fato, hipótese, preferência, decisão ou procedimento.
-3. Validar, deduplicar e relacionar com fontes.
-4. Promover para `semantic/` ou `procedural/`.
-5. Recuperar usando o índice e reforçar memórias úteis.
-6. Marcar como `deprecated` quando estiver desatualizada, preservando o histórico.
-
-## Recuperação progressiva
-
-1. `memory/INDEX.md` e caminhos conhecidos.
-2. Busca textual por título, tags e conteúdo.
-3. Índice FTS/BM25 local.
-4. Busca semântica, somente quando o volume justificar.
-
-O resultado recuperado deve incluir o caminho da fonte e a confiança da memória.
-
-## Política de pesquisa e ferramentas
-
-Decisões técnicas devem ser baseadas em pesquisa atual. O agente deve consultar documentação oficial e, quando trouxer valor, complementar com repositórios, fóruns, Stack Overflow e Reddit. Fontes práticas devem ser tratadas como evidência de experiência, não como autoridade automática.
-
-Skills, MCPs e CLIs disponíveis fazem parte da arquitetura operacional do agente. Antes de executar uma tarefa, o agente deve descobrir as ferramentas aplicáveis, usar as que forem relevantes e registrar limitações de disponibilidade. A pesquisa e as ferramentas utilizadas devem ser registradas junto da decisão para manter a memória auditável.
+- FastAPI, CORS: https://fastapi.tiangolo.com/tutorial/cors/
+- MDN, Fetch API: https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch
+- Next.js, variáveis de ambiente: documentação versionada em `node_modules/next/dist/docs/` e https://nextjs.org/docs/app/guides/environment-variables

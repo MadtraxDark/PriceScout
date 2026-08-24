@@ -1,21 +1,16 @@
 {
-  "name": "my-app",
+  "name": "pricescout-frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "scrape:kabum": "node --experimental-strip-types scripts/scrape-kabum.mts"
+    "lint": "eslint"
   },
   "dependencies": {
-    "@crawlee/playwright": "^3.16.0",
-    "@supabase/ssr": "^0.12.4",
-    "@supabase/supabase-js": "^2.57.0",
     "gsap": "^3.15.0",
     "next": "16.3.2",
-    "playwright": "^1.55.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },

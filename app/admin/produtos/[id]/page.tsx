@@ -4,10 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import ImageViewer, { ImageWithState } from "@/components/ImageViewer";
+import { catalogApi } from "@/utils/api/services";
+import type { Product, ProductImage, TaxonomyItem } from "@/utils/api/contracts";
 
-type ImageItem = { id: string; drive_file_id: string; name: string; image_url: string; sort_order: number; source_image_url: string | null };
-type Product = { id: string; name: string; brand: string | null; product_url: string; source: string; external_product_id: string; availability: string; stock_quantity: number | null; seller: string | null; special_status: string | null; shipping_from: string | null; original_price: number | null; pix_price: number | null; pix_discount_percent: number | null; card_price: number | null; installments_quantity: number | null; installment_amount: number | null; price_difference_pix_to_card: number | null; primary_image_id: string | null; store?: { name: string; hostname: string } | null };
-type TaxonomyItem = { level: number; category?: { id: string; name: string; slug: string; level: number } | null };
 
 const fields: Array<{ key: keyof Product; label: string; type?: string }> = [
   { key: "name", label: "Nome" }, { key: "brand", label: "Marca" }, { key: "product_url", label: "URL do produto", type: "url" },
@@ -27,14 +26,14 @@ export default function ProductAdminPage({ params }: { params: Promise<{ id: str
   const [id, setId] = useState("");
   const [product, setProduct] = useState<Product | null>(null);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
-  const [images, setImages] = useState<ImageItem[]>([]);
+  const [images, setImages] = useState<ProductImage[]>([]);
   const [taxonomy, setTaxonomy] = useState<TaxonomyItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
-  const [lightbox, setLightbox] = useState<ImageItem | null>(null);
-  const [deleteCandidate, setDeleteCandidate] = useState<ImageItem | null>(null);
+  const [lightbox, setLightbox] = useState<ProductImage | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<ProductImage | null>(null);
   const [deleteProcessing, setDeleteProcessing] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [exitPrompt, setExitPrompt] = useState(false);
@@ -43,7 +42,7 @@ export default function ProductAdminPage({ params }: { params: Promise<{ id: str
 
   async function load(productId: string) {
     setLoading(true); setError("");
-    try { const response = await fetch(`/api/catalog/products/${productId}`, { cache: "no-store" }); const result = await response.json() as { product?: Product; images?: ImageItem[]; taxonomy?: TaxonomyItem[]; error?: string }; if (!response.ok || !result.product) throw new Error(result.error || "Não foi possível carregar o produto."); setProduct(result.product); setDraft(result.product); setImages(result.images ?? []); setTaxonomy(result.taxonomy ?? []); } catch (loadError) { setError(loadError instanceof Error ? loadError.message : "Não foi possível carregar o produto."); } finally { setLoading(false); }
+    try { const result = await catalogApi.getProduct(productId); setProduct(result.product); setDraft(result.product); setImages(result.images ?? []); setTaxonomy(result.taxonomy ?? []); } catch (loadError) { setError(loadError instanceof Error ? loadError.message : "Não foi possível carregar o produto."); } finally { setLoading(false); }
   }
 
   useEffect(() => { void params.then((value) => { setId(value.id); void load(value.id); }); }, [params]);
@@ -51,11 +50,11 @@ export default function ProductAdminPage({ params }: { params: Promise<{ id: str
   const hasUnsavedChanges = useMemo(() => Boolean(product && JSON.stringify(draft) !== JSON.stringify(product)), [draft, product]);
   const update = (key: string, value: string) => setDraft((current) => ({ ...current, [key]: value === "" ? null : ["number"].includes(fields.find((field) => field.key === key)?.type || "") ? Number(value) : value }));
 
-  async function save() { if (!id) return; setSaving(true); setNotice(""); setError(""); const response = await fetch(`/api/catalog/products/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(draft) }); const result = await response.json() as { product?: Product; error?: string }; if (!response.ok || !result.product) setError(result.error || "Não foi possível salvar as alterações."); else { setProduct(result.product); setDraft(result.product); setNotice("Alterações salvas no produto canônico."); } setSaving(false); }
-  async function arrange(imageIds: string[], primaryImageId?: string) { setImages((current) => imageIds.map((imageId) => current.find((image) => image.id === imageId)).filter((image): image is ImageItem => Boolean(image))); const response = await fetch(`/api/catalog/products/${id}/images`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageIds, ...(primaryImageId ? { primaryImageId } : {}) }) }); if (!response.ok) { setError("Não foi possível atualizar a galeria."); await load(id); } else if (primaryImageId) setProduct((current) => current ? { ...current, primary_image_id: primaryImageId } : current); }
-  async function deleteImage(image: ImageItem) { setDeleteError(""); setDeleteCandidate(image); }
-  async function confirmDeleteImage() { const image = deleteCandidate; if (!image || deleteProcessing) return; setDeleteProcessing(true); setDeleteError(""); const response = await fetch(`/api/catalog/products/${id}/images?imageId=${encodeURIComponent(image.id)}`, { method: "DELETE" }); if (!response.ok) { setDeleteError("Não foi possível excluir a imagem. Tente novamente."); setDeleteProcessing(false); return; } const next = images.filter((item) => item.id !== image.id); setImages(next); if (image.id === product?.primary_image_id) { const nextPrimary = next[0]; if (nextPrimary) await arrange(next.map((item) => item.id), nextPrimary.id); else setProduct((current) => current ? { ...current, primary_image_id: null } : current); } setNotice("Imagem excluída com sucesso."); setDeleteProcessing(false); window.setTimeout(() => setDeleteCandidate(null), 450); }
-  async function addImage(event: React.FormEvent) { event.preventDefault(); if (!newImageUrl.trim()) return; setAddingImage(true); const response = await fetch(`/api/catalog/products/${id}/images`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageUrl: newImageUrl.trim() }) }); const result = await response.json() as { image?: ImageItem; error?: string }; if (!response.ok || !result.image) setError(result.error || "Não foi possível adicionar a imagem."); else { setImages((current) => [...current, result.image as ImageItem]); setNewImageUrl(""); setNotice("Imagem adicionada à galeria."); } setAddingImage(false); }
+  async function save() { if (!id) return; setSaving(true); setNotice(""); setError(""); try { const result = await catalogApi.updateProduct(id, draft); setProduct(result.product); setDraft(result.product); setNotice("Alterações salvas no produto canônico."); } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "Não foi possível salvar as alterações."); } finally { setSaving(false); } }
+  async function arrange(imageIds: string[], primaryImageId?: string) { setImages((current) => imageIds.map((imageId) => current.find((image) => image.id === imageId)).filter((image): image is ProductImage => Boolean(image))); try { await catalogApi.updateProductImages(id, imageIds, primaryImageId); if (primaryImageId) setProduct((current) => current ? { ...current, primary_image_id: primaryImageId } : current); } catch { setError("Não foi possível atualizar a galeria."); await load(id); } }
+  async function deleteImage(image: ProductImage) { setDeleteError(""); setDeleteCandidate(image); }
+  async function confirmDeleteImage() { const image = deleteCandidate; if (!image || deleteProcessing) return; setDeleteProcessing(true); setDeleteError(""); try { await catalogApi.deleteProductImage(id, image.id); const next = images.filter((item) => item.id !== image.id); setImages(next); if (image.id === product?.primary_image_id) { const nextPrimary = next[0]; if (nextPrimary) await arrange(next.map((item) => item.id), nextPrimary.id); else setProduct((current) => current ? { ...current, primary_image_id: null } : current); } setNotice("Imagem excluída com sucesso."); window.setTimeout(() => setDeleteCandidate(null), 450); } catch { setDeleteError("Não foi possível excluir a imagem. Tente novamente."); } finally { setDeleteProcessing(false); } }
+  async function addImage(event: React.FormEvent) { event.preventDefault(); if (!newImageUrl.trim()) return; setAddingImage(true); try { const result = await catalogApi.addProductImage(id, newImageUrl.trim()); setImages((current) => [...current, result.image]); setNewImageUrl(""); setNotice("Imagem adicionada à galeria."); } catch (addError) { setError(addError instanceof Error ? addError.message : "Não foi possível adicionar a imagem."); } finally { setAddingImage(false); } }
   function requestExit() { if (hasUnsavedChanges) setExitPrompt(true); else router.push("/admin?view=products"); }
   function exitWithoutSaving() { setExitPrompt(false); router.push("/admin?view=products"); }
   if (loading) return <main className="product-admin-shell"><p className="eyebrow">Produto</p><h1>Carregando área de gerenciamento...</h1></main>;

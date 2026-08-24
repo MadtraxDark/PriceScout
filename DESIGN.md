@@ -51,5 +51,5 @@ Transições curtas para estados de operação e uma pulsação lenta apenas na 
 ## Componentes compartilhados
 
 - `ImageViewer` recebe somente imagens normalizadas como `{ id, src, thumbnailSrc?, alt? }` e controla modal, foco, teclado, navegação, miniaturas, contador e estados de carregamento.
-- O componente não conhece produto, loja, scraper, KaBuM ou Google Drive. As telas devem fornecer URLs seguras já preparadas pelo backend.
+- O componente não conhece produto, loja ou mecanismo de coleta. As telas devem fornecer URLs seguras retornadas pela API.
 - `ImageWithState` concentra os estados visuais `loading`, `loaded` e `error` para manter o skeleton e o fallback de imagem consistentes.

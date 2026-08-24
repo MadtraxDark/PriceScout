@@ -5,18 +5,14 @@ import type { RefObject } from "react";
 import { gsap } from "gsap";
 import Link from "next/link";
 import ShinyText from "@/components/ShinyText";
-import { detectStoreFromUrl } from "@/utils/scraping/store-detector";
-import type { KabumProduct } from "@/utils/scraping/kabum";
-import { getProductNameFromUrl } from "@/utils/scraping/product-url";
 import ImageViewer, { ImageWithState } from "@/components/ImageViewer";
+import { catalogApi } from "@/utils/api/services";
+import type { CatalogProduct, CatalogStore, ProductPreview } from "@/utils/api/contracts";
 
 type View = "overview" | "products" | "stores" | "product" | "store";
 type ScrapeStatus = "idle" | "loading" | "ready" | "error";
 type ImportStepStatus = "pending" | "active" | "completed" | "error";
 type ImportStep = { id: string; label: string; status: ImportStepStatus };
-type CatalogProduct = { id: string; name: string; image_url: string | null; brand: string | null; product_url: string; source: string; external_product_id: string; availability: string; pix_price: number | null; updated_at: string; store?: { name: string; hostname: string } | null };
-type CatalogStore = { id: string; name: string; hostname: string; url: string; productCount: number; updated_at: string };
-
 const scrapeProgressMessages = [
   "Acessando página do produto...",
   "Identificando produto...",
@@ -28,17 +24,22 @@ const scrapeProgressMessages = [
 ];
 
 const importStepDefinitions = [
-  { id: "dedupe", label: "Verificando imagens duplicadas..." },
-  { id: "upload", label: "Enviando imagens para o Google Drive..." },
-  { id: "product", label: "Salvando produto no banco de dados..." },
-  { id: "taxonomy", label: "Criando/atualizando taxonomia..." },
-  { id: "relations", label: "Relacionando imagens ao produto..." },
-  { id: "tables", label: "Atualizando tabelas..." },
-  { id: "finish", label: "Finalizando importação..." },
+  { id: "request", label: "Enviando a prévia aprovada..." },
+  { id: "processing", label: "Aguardando o processamento da API..." },
+  { id: "refresh", label: "Atualizando o catálogo..." },
 ] as const;
 
 function initialImportSteps(): ImportStep[] {
   return importStepDefinitions.map((step) => ({ ...step, status: "pending" }));
+}
+
+function parseHttpUrl(value: string): URL | null {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 function Icon({ name }: { name: "grid" | "box" | "store" | "bell" | "plus" | "arrow" | "search" | "check" | "external" | "refresh" | "chevron-left" | "chevron-right" | "chevron-down" | "close" }) {
@@ -86,16 +87,13 @@ export default function Home() {
   const [storeName, setStoreName] = useState("");
   const [storeUrl, setStoreUrl] = useState("");
   const [scrapeStatus, setScrapeStatus] = useState<ScrapeStatus>("idle");
-  const [scrapedProduct, setScrapedProduct] = useState<KabumProduct | null>(null);
+  const [scrapedProduct, setScrapedProduct] = useState<ProductPreview | null>(null);
   const [scrapeError, setScrapeError] = useState("");
   const [approvedPreview, setApprovedPreview] = useState(false);
   const [discardPrompt, setDiscardPrompt] = useState(false);
   const [reviewedUrl, setReviewedUrl] = useState("");
   const [progressIndex, setProgressIndex] = useState(0);
   const [previewVisible, setPreviewVisible] = useState(false);
-  const [driveConnected, setDriveConnected] = useState<boolean | null>(null);
-  const [driveConnecting, setDriveConnecting] = useState(false);
-  const [driveMessage, setDriveMessage] = useState("");
   const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([]);
   const [catalogStores, setCatalogStores] = useState<CatalogStore[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(true);
@@ -154,34 +152,21 @@ export default function Home() {
   }, [scrapedProduct]);
 
   useEffect(() => {
-    void Promise.all([fetch("/api/catalog/products"), fetch("/api/catalog/stores")]).then(async ([productsResponse, storesResponse]) => {
-      if (!productsResponse.ok || !storesResponse.ok) throw new Error("Não foi possível carregar o catálogo.");
-      const productsResult = await productsResponse.json() as { products?: CatalogProduct[] };
-      const storesResult = await storesResponse.json() as { stores?: CatalogStore[] };
+    void Promise.all([catalogApi.listProducts(), catalogApi.listStores()]).then(([productsResult, storesResult]) => {
       setCatalogProducts(productsResult.products ?? []);
       setCatalogStores(storesResult.stores ?? []);
       setCatalogError("");
     }).catch(() => setCatalogError("Não foi possível carregar os registros do catálogo.")).finally(() => setCatalogLoading(false));
-    void fetch("/api/integrations/google-drive/status").then(async (response) => {
-      if (response.ok) setDriveConnected((await response.json() as { connected?: boolean }).connected === true);
-    });
     const params = new URLSearchParams(window.location.search);
     const requestedView = params.get("view");
-    if (requestedView === "overview" || requestedView === "products" || requestedView === "stores" || requestedView === "product" || requestedView === "store") setView(requestedView);
-    const driveResult = params.get("drive");
-    if (driveResult === "connected" || driveResult === "error") {
-      const message = driveResult === "connected" ? "Google Drive conectado com sucesso." : "Não foi possível conectar o Google Drive.";
-      window.setTimeout(() => { setDriveConnected(driveResult === "connected"); setNotice(message); }, 0);
-      window.history.replaceState({}, "", window.location.pathname);
+    if (requestedView === "overview" || requestedView === "products" || requestedView === "stores" || requestedView === "product" || requestedView === "store") {
+      window.setTimeout(() => setView(requestedView), 0);
     }
   }, []);
 
   async function reloadCatalog(): Promise<boolean> {
     try {
-      const [productsResponse, storesResponse] = await Promise.all([fetch("/api/catalog/products"), fetch("/api/catalog/stores")]);
-      if (!productsResponse.ok || !storesResponse.ok) throw new Error("catálogo indisponível");
-      const productsResult = await productsResponse.json() as { products?: CatalogProduct[] };
-      const storesResult = await storesResponse.json() as { stores?: CatalogStore[] };
+      const [productsResult, storesResult] = await Promise.all([catalogApi.listProducts(), catalogApi.listStores()]);
       setCatalogProducts(productsResult.products ?? []);
       setCatalogStores(storesResult.stores ?? []);
       setCatalogError("");
@@ -198,9 +183,7 @@ export default function Home() {
 
   async function submitProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const detection = detectStoreFromUrl(productUrl);
-    if (!detection) { setScrapeStatus("error"); setScrapeError("Informe um link de produto válido usando http:// ou https://."); return; }
-    if (!detection.supported) { setScrapeStatus("error"); setScrapeError(`A loja ${detection.hostname} foi reconhecida, mas ainda não possui um scraper configurado.`); return; }
+    if (!parseHttpUrl(productUrl)) { setScrapeStatus("error"); setScrapeError("Informe um link de produto válido usando http:// ou https://."); return; }
     setScrapeStatus("loading"); setScrapeError(""); setNotice(""); setScrapedProduct(null); setApprovedPreview(false); setProgressIndex(0);
     let currentProgressIndex = 0;
     const progressTimer = window.setInterval(() => {
@@ -208,9 +191,8 @@ export default function Home() {
       setProgressIndex(currentProgressIndex);
     }, 1200);
     try {
-      const response = await fetch("/api/scrape/product", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: productUrl }) });
-      const result = await response.json() as { product?: KabumProduct; error?: string };
-      if (!response.ok || !result.product) throw new Error(result.error || "Não foi possível coletar os dados do produto.");
+      const result = await catalogApi.previewProduct(productUrl);
+      if (!result.product) throw new Error("A API não retornou a prévia do produto.");
       setProgressIndex(scrapeProgressMessages.length - 1);
       setScrapedProduct(result.product); setReviewedUrl(productUrl); setScrapeStatus("ready");
       window.setTimeout(revealPreview, 80);
@@ -224,66 +206,27 @@ export default function Home() {
 
   async function approvePreview() {
     if (!scrapedProduct || importing || approvedPreview) return;
-    const productUrlObject = new URL(scrapedProduct.url);
     setImporting(true);
     setImportError("");
     setNotice("");
     setImportSteps(initialImportSteps());
     const setStep = (id: string, status: ImportStepStatus) => setImportSteps((steps) => steps.map((step) => step.id === id ? { ...step, status } : step));
     const completeStep = (id: string) => { setStep(id, "completed"); };
-    let taxonomyCount = 0;
-    let reusedCount = 0;
-    let uploadedCount = 0;
-    let googleDriveFileId: string | null = null;
-    let currentStepId = "dedupe";
+    let currentStepId = "request";
     try {
-      currentStepId = "dedupe";
+      currentStepId = "request";
       setStep(currentStepId, "active");
-      if (scrapedProduct.images.length === 0) {
-        completeStep("dedupe");
-        completeStep("upload");
-      } else {
-        currentStepId = "upload";
-        setStep(currentStepId, "active");
-        const driveResponse = await fetch("/api/integrations/google-drive/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: scrapedProduct.source, productId: scrapedProduct.productId, productUrl: scrapedProduct.url, productName: scrapedProduct.name, brand: scrapedProduct.brand, images: scrapedProduct.images }) });
-        const driveResult = await driveResponse.json() as { files?: Array<{ driveFileId?: string; reused?: boolean }>; error?: string; reauthorizationRequired?: boolean };
-        if (!driveResponse.ok) { if (driveResult.reauthorizationRequired) setDriveConnected(false); throw new Error(driveResult.error || "As imagens não puderam ser armazenadas no Google Drive."); }
-        completeStep("dedupe");
-        completeStep("upload");
-        completeStep("relations");
-        uploadedCount = driveResult.files?.length ?? 0;
-        reusedCount = driveResult.files?.filter((file) => file.reused).length ?? 0;
-        googleDriveFileId = driveResult.files?.[0]?.driveFileId ?? null;
-        setDriveConnected(true);
-      }
-
-      currentStepId = "product";
+      completeStep("request");
+      currentStepId = "processing";
       setStep(currentStepId, "active");
-      const catalogResponse = await fetch("/api/catalog/products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: scrapedProduct.source, productId: scrapedProduct.productId, productUrl: scrapedProduct.url, name: scrapedProduct.name, googleDriveFileId, brand: scrapedProduct.brand, originalPrice: scrapedProduct.originalPrice, pixPrice: scrapedProduct.pixPrice, pixDiscountPercent: scrapedProduct.pixDiscountPercent, cardPrice: scrapedProduct.cardPrice, installmentsQuantity: scrapedProduct.installments?.quantity ?? null, installmentAmount: scrapedProduct.installments?.amount ?? null, priceDifferencePixToCard: scrapedProduct.priceDifferencePixToCard, availability: scrapedProduct.availability, stockQuantity: scrapedProduct.stockQuantity, seller: scrapedProduct.seller, specialStatus: scrapedProduct.special_status, shippingFrom: scrapedProduct.shipping_from, storeName: scrapedProduct.source === "kabum" ? "KaBuM!" : productUrlObject.hostname, storeUrl: productUrlObject.origin }) });
-      const catalogResult = await catalogResponse.json() as { error?: string };
-      if (!catalogResponse.ok) throw new Error(catalogResult.error || "O produto não pôde ser salvo no catálogo.");
-      completeStep("product");
-
-      currentStepId = "taxonomy";
-      setStep(currentStepId, "active");
-      if (scrapedProduct.taxonomy.length > 0) {
-        const response = await fetch("/api/catalog/taxonomy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: scrapedProduct.source, productId: scrapedProduct.productId, productUrl: scrapedProduct.url, taxonomy: scrapedProduct.taxonomy }) });
-        const result = await response.json() as { taxonomy?: unknown[]; error?: string };
-        if (!response.ok) throw new Error(result.error || "A taxonomia não pôde ser persistida.");
-        taxonomyCount = result.taxonomy?.length ?? scrapedProduct.taxonomy.length;
-      }
-      completeStep("taxonomy");
-      if (scrapedProduct.images.length === 0) completeStep("relations");
-
-      currentStepId = "tables";
+      const result = await catalogApi.importProduct(scrapedProduct);
+      completeStep("processing");
+      currentStepId = "refresh";
       setStep(currentStepId, "active");
       if (!await reloadCatalog()) throw new Error("As tabelas do catálogo não confirmaram a atualização.");
-      completeStep("tables");
-      currentStepId = "finish";
-      setStep(currentStepId, "active");
-      completeStep("finish");
+      completeStep("refresh");
       setApprovedPreview(true);
-      setNotice(`${taxonomyCount} categorias processadas; ${uploadedCount} imagens armazenadas, ${reusedCount} reutilizadas por hash.`);
+      setNotice(result.message || "Produto importado e confirmado pela API.");
       window.setTimeout(() => {
         setImporting(false);
         if (importSuccessRef.current) gsap.fromTo(importSuccessRef.current, { opacity: 0, y: 8, scale: 0.98 }, { opacity: 1, y: 0, scale: 1, duration: 0.45, ease: "power2.out" });
@@ -310,20 +253,6 @@ export default function Home() {
     }
   }
 
-  async function connectGoogleDrive() {
-    setDriveConnecting(true);
-    setDriveMessage("");
-    try {
-      window.location.assign("/api/integrations/google-drive/authorize");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Não foi possível conectar o Google Drive.";
-      setDriveMessage(message);
-      setNotice(message);
-    } finally {
-      setDriveConnecting(false);
-    }
-  }
-
   function changeProductUrl(value: string) {
     setProductUrl(value);
     if (scrapedProduct && !discardPrompt && value !== reviewedUrl) setDiscardPrompt(true);
@@ -347,21 +276,22 @@ export default function Home() {
 
   async function submitStore(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const detection = detectStoreFromUrl(storeUrl);
-    if (!detection) { setNotice("Informe um link válido usando http:// ou https://."); return; }
-    if (!detection.supported) { setNotice(`A loja ${detection.hostname} foi reconhecida, mas ainda não possui um scraper específico configurado.`); return; }
-    const response = await fetch("/api/catalog/stores", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: storeName, url: storeUrl }) });
-    const result = await response.json() as { error?: string };
-    if (!response.ok) { setNotice(result.error || "Não foi possível salvar a loja."); return; }
-    await reloadCatalog();
-    setNotice(`A loja ${detection.hostname} foi cadastrada no catálogo.`);
+    const parsedUrl = parseHttpUrl(storeUrl);
+    if (!parsedUrl) { setNotice("Informe um link válido usando http:// ou https://."); return; }
+    try {
+      await catalogApi.createStore({ name: storeName, url: storeUrl });
+      await reloadCatalog();
+      setNotice(`A loja ${parsedUrl.hostname} foi cadastrada no catálogo.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Não foi possível salvar a loja.");
+    }
   }
 
   function openView(nextView: View) { setView(nextView); setNotice(""); setScrapeError(""); }
 
   return <main className="admin-shell">
-    <aside className="sidebar"><div className="sidebar-top"><Logo /><span className="admin-badge">admin</span></div><nav className="main-nav" aria-label="Navegação principal"><p className="nav-label">Workspace</p>{navItems.map((item) => <button key={item.id} className={`nav-item ${view === item.id ? "active" : ""}`} onClick={() => openView(item.id)}><Icon name={item.icon} /><span>{item.label}</span>{item.id === "overview" && <span className="nav-arrow"><Icon name="arrow" /></span>}</button>)}</nav><div className="sidebar-note"><span className="live-dot" /><div><strong>Dados conectados</strong><span>Prévia do scraper disponível</span></div></div><div className="sidebar-bottom"><div className="user-profile"><span className="avatar">--</span><span><strong>Conta administrativa</strong><small>Identidade não carregada</small></span></div></div></aside>
-    <section className="content-shell"><header className="topbar"><div className="mobile-logo"><Logo /></div><div className="search-box"><Icon name="search" /><input aria-label="Buscar no PriceScout" placeholder="Buscar no catálogo" /></div><div className="topbar-actions">{driveMessage && <span className="drive-status-message" role="status">{driveMessage}</span>}<button className={`outline-button drive-connect-button ${driveConnected ? "connected" : ""}`} type="button" onClick={connectGoogleDrive} disabled={driveConnecting || driveConnected === true}>{driveConnecting ? "Conectando..." : driveConnected ? "Google Drive conectado" : "Conectar Google Drive"}</button><button className="icon-action" aria-label="Notificações"><Icon name="bell" /></button><div className="topbar-divider" /><span className="environment">Ambiente não informado</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <Overview openView={openView} /> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : view === "stores" ? <CatalogView kind="stores" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : <FormView view={view} notice={notice} onSubmit={view === "product" ? submitProduct : submitStore} productUrl={productUrl} onProductUrlChange={changeProductUrl} storeName={storeName} setStoreName={setStoreName} storeUrl={storeUrl} setStoreUrl={setStoreUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} approvedPreview={approvedPreview} onApprove={approvePreview} progressMessage={scrapeProgressMessages[progressIndex]} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}</section>
+    <aside className="sidebar"><div className="sidebar-top"><Logo /><span className="admin-badge">admin</span></div><nav className="main-nav" aria-label="Navegação principal"><p className="nav-label">Workspace</p>{navItems.map((item) => <button key={item.id} className={`nav-item ${view === item.id ? "active" : ""}`} onClick={() => openView(item.id)}><Icon name={item.icon} /><span>{item.label}</span>{item.id === "overview" && <span className="nav-arrow"><Icon name="arrow" /></span>}</button>)}</nav><div className="sidebar-note"><span className="live-dot" /><div><strong>API conectada</strong><span>Operações centralizadas</span></div></div><div className="sidebar-bottom"><div className="user-profile"><span className="avatar">--</span><span><strong>Conta administrativa</strong><small>Identidade não carregada</small></span></div></div></aside>
+    <section className="content-shell"><header className="topbar"><div className="mobile-logo"><Logo /></div><div className="search-box"><Icon name="search" /><input aria-label="Buscar no PriceScout" placeholder="Buscar no catálogo" /></div><div className="topbar-actions"><button className="icon-action" aria-label="Notificações"><Icon name="bell" /></button><div className="topbar-divider" /><span className="environment">API externa</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <Overview openView={openView} /> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : view === "stores" ? <CatalogView kind="stores" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : <FormView view={view} notice={notice} onSubmit={view === "product" ? submitProduct : submitStore} productUrl={productUrl} onProductUrlChange={changeProductUrl} storeName={storeName} setStoreName={setStoreName} storeUrl={storeUrl} setStoreUrl={setStoreUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} approvedPreview={approvedPreview} onApprove={approvePreview} progressMessage={scrapeProgressMessages[progressIndex]} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}</section>
   </main>;
 }
 
@@ -379,16 +309,14 @@ function CatalogView({ kind, openView, products, stores, loading }: { kind: "pro
   return <div className="catalog-page"><div className="page-intro"><div><p className="eyebrow">Catálogo</p><h1>{isProducts ? "Produtos cadastrados." : "Lojas cadastradas."}</h1><p className="intro-copy">{isProducts ? "Identifique rapidamente cada produto pela imagem e pelo nome." : "Consulte as lojas e sites confirmados como fontes oficiais."}</p></div><button className="primary-button" onClick={() => openView(isProducts ? "product" : "store")}><Icon name="plus" /> {isProducts ? "Adicionar produto" : "Adicionar site por link"}</button></div>{loading ? <section className="empty-state"><h2>Carregando registros...</h2></section> : rows.length === 0 ? <section className="empty-state"><span className="empty-icon"><Icon name={isProducts ? "box" : "store"} /></span><h2>Nenhum registro disponível</h2><p>{isProducts ? "Os produtos aparecerão aqui depois que forem cadastrados e aprovados." : "As lojas aparecerão aqui depois que forem cadastradas e aprovadas."}</p><button className="outline-button" onClick={() => openView(isProducts ? "product" : "store")}><Icon name="plus" /> {isProducts ? "Cadastrar produto" : "Adicionar site por link"}</button></section> : isProducts ? <section className="catalog-grid" aria-label="Produtos cadastrados">{products.map((product) => <article className="catalog-card" key={product.id}><Link className="catalog-card-manage" href={`/admin/produtos/${product.id}`} aria-label={`Gerenciar ${product.name}`}><div className="catalog-card-media">{product.image_url ? <MediaImage key={product.image_url} src={product.image_url} alt="" className="catalog-media-image" /> : <span className="catalog-card-media-empty"><Icon name="box" /><span>Imagem não disponível</span></span>}</div><div className="catalog-card-body"><h2>{product.name}</h2><span className="catalog-card-link">Gerenciar produto <Icon name="arrow" /></span></div></Link><a className="catalog-card-source" href={product.product_url} target="_blank" rel="noreferrer">Abrir origem <Icon name="external" /></a></article>)}</section> : <section className="catalog-list">{stores.map((store) => <article className="catalog-row" key={store.id}><div className="catalog-row-icon"><Icon name="store" /></div><div className="catalog-row-main"><strong>{store.name}</strong><span>{store.hostname}</span></div><div className="catalog-row-meta"><b>{store.productCount} {store.productCount === 1 ? "produto" : "produtos"}</b><span>{store.url}</span></div><a className="catalog-row-link" href={store.url} target="_blank" rel="noreferrer" aria-label={`Abrir ${store.name}`}><Icon name="external" /></a></article>)}</section>}</div>;
 }
 
-function FormView({ view, notice, onSubmit, productUrl, onProductUrlChange, storeName, setStoreName, storeUrl, setStoreUrl, scrapeStatus, scrapedProduct, scrapeError, approvedPreview, onApprove, progressMessage, previewVisible, onRevealPreview, previewRef, importing, importSteps, importError, importPanelRef, importSuccessRef }: { view: "product" | "store"; notice: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; productUrl: string; onProductUrlChange: (value: string) => void; storeName: string; setStoreName: (value: string) => void; storeUrl: string; setStoreUrl: (value: string) => void; scrapeStatus: ScrapeStatus; scrapedProduct: KabumProduct | null; scrapeError: string; approvedPreview: boolean; onApprove: () => void; progressMessage: string; previewVisible: boolean; onRevealPreview: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; importSteps: ImportStep[]; importError: string; importPanelRef: RefObject<HTMLDivElement | null>; importSuccessRef: RefObject<HTMLDivElement | null> }) {
+function FormView({ view, notice, onSubmit, productUrl, onProductUrlChange, storeName, setStoreName, storeUrl, setStoreUrl, scrapeStatus, scrapedProduct, scrapeError, approvedPreview, onApprove, progressMessage, previewVisible, onRevealPreview, previewRef, importing, importSteps, importError, importPanelRef, importSuccessRef }: { view: "product" | "store"; notice: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; productUrl: string; onProductUrlChange: (value: string) => void; storeName: string; setStoreName: (value: string) => void; storeUrl: string; setStoreUrl: (value: string) => void; scrapeStatus: ScrapeStatus; scrapedProduct: ProductPreview | null; scrapeError: string; approvedPreview: boolean; onApprove: () => void; progressMessage: string; previewVisible: boolean; onRevealPreview: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; importSteps: ImportStep[]; importError: string; importPanelRef: RefObject<HTMLDivElement | null>; importSuccessRef: RefObject<HTMLDivElement | null> }) {
   const isProduct = view === "product";
-  const detectedStore = useMemo(() => isProduct ? detectStoreFromUrl(productUrl) : detectStoreFromUrl(storeUrl), [isProduct, productUrl, storeUrl]);
-  const urlProductName = isProduct ? getProductNameFromUrl(productUrl) : null;
+  const detectedUrl = useMemo(() => parseHttpUrl(isProduct ? productUrl : storeUrl), [isProduct, productUrl, storeUrl]);
   const productFields = <>
     <label htmlFor="product-url">URL do produto<span className="required">Obrigatório</span></label>
     <input id="product-url" type="url" value={productUrl} onChange={(e) => onProductUrlChange(e.target.value)} placeholder="Cole o link oficial do produto" required />
-    <p className="helper">A loja e o scraper são identificados pelo domínio do link.</p>
-    {detectedStore && <div className={`detection-box ${detectedStore.supported ? "supported" : "unsupported"}`}><strong>Loja reconhecida</strong><span>{detectedStore.hostname}</span><small>{detectedStore.supported ? "Scraper pronto para gerar uma prévia." : "Scraper específico ainda não configurado."}</small></div>}
-    {urlProductName && <div className="url-product-preview"><span>Nome sugerido pelo link</span><strong>{urlProductName}</strong><small>O scraper confirma o nome final na página oficial.</small></div>}
+    <p className="helper">A API identifica a loja e coleta os dados a partir do domínio informado.</p>
+    {detectedUrl && <div className="detection-box supported"><strong>Endereço válido</strong><span>{detectedUrl.hostname}</span><small>A compatibilidade da fonte será validada pela API.</small></div>}
   </>;
   const storeFields = <>
     <label htmlFor="store-name">Nome da loja<span className="required">Obrigatório</span></label>
@@ -400,7 +328,7 @@ function FormView({ view, notice, onSubmit, productUrl, onProductUrlChange, stor
   return <div className="form-page">
     <div className="breadcrumb"><span>Visão geral</span><span>/</span><span>{isProduct ? "Adicionar produto" : "Adicionar site por link"}</span></div>
     <div className="form-layout">
-      <div className="form-intro"><p className="eyebrow">Novo registro</p><h1>{isProduct ? "Cole o link. Revise o produto." : "Adicione um site por link."}</h1><p>{isProduct ? "O scraper abre a página oficial, extrai o nome real e prepara uma prévia para sua aprovação." : "Cole o link oficial do site para registrar uma nova fonte de preços."}</p><div className="form-rail"><span className="rail-line" /><span>{isProduct ? "01" : "02"}</span><span>{isProduct ? "Coletar e revisar" : "Link da fonte"}</span></div></div>
+      <div className="form-intro"><p className="eyebrow">Novo registro</p><h1>{isProduct ? "Cole o link. Revise o produto." : "Adicione um site por link."}</h1><p>{isProduct ? "A API consulta a página oficial e prepara uma prévia para sua aprovação." : "Cole o link oficial do site para registrar uma nova fonte de preços."}</p><div className="form-rail"><span className="rail-line" /><span>{isProduct ? "01" : "02"}</span><span>{isProduct ? "Coletar e revisar" : "Link da fonte"}</span></div></div>
       <form className="data-form" onSubmit={onSubmit}>
         <div className="form-card"><div className="form-card-heading"><span className="form-number">{isProduct ? "01" : "02"}</span><div><h2>{isProduct ? "Link do produto" : "Link do site"}</h2><p>{isProduct ? "O nome vem da página, nunca de um texto digitado manualmente." : "O link será revisado antes de entrar no monitoramento."}</p></div></div>{isProduct ? productFields : storeFields}</div>
         {isProduct && scrapeStatus === "loading" && <div className="scrape-progress" role="status" aria-live="polite"><span className="progress-pulse" /><ShinyText text={progressMessage} speed={2} delay={0} color="#728589" shineColor="#ffffff" spread={120} direction="left" yoyo={false} pauseOnHover={false} disabled={false} /></div>}
@@ -417,19 +345,19 @@ function ImportProgress({ steps, importing, error, panelRef, successRef }: { ste
   const failedStep = steps.find((step) => step.status === "error");
   const activeStep = steps.find((step) => step.status === "active");
   const completed = steps.every((step) => step.status === "completed");
-  return <section className={`import-progress-panel ${error ? "has-error" : completed ? "is-success" : ""}`} ref={panelRef} aria-live="polite"><div className="import-progress-heading"><div><p className="eyebrow">Importação do produto</p><h2>{error ? "A importação foi interrompida" : completed ? "Produto importado com sucesso" : "Importando produto..."}</h2><p>{error ? `Falha em: ${failedStep?.label || "etapa não identificada"}` : activeStep ? "O backend confirmou o andamento desta etapa." : "Todas as etapas foram confirmadas pelo backend."}</p></div><span className="import-progress-counter">{steps.filter((step) => step.status === "completed").length}/{steps.length}</span></div><div className="import-steps">{steps.map((step) => <div className={`import-step ${step.status}`} key={step.id}><span className="import-step-mark">{step.status === "completed" ? <Icon name="check" /> : step.status === "error" ? <Icon name="close" /> : step.status === "active" ? <span className="import-step-pulse" /> : <span />}</span><span className="import-step-label">{step.status === "active" ? <ShinyText text={step.label} speed={2} delay={0} color="#728589" shineColor="#ffffff" spread={120} direction="left" yoyo={false} pauseOnHover={false} disabled={false} /> : step.label.replace("...", "")}</span></div>)}</div>{completed && <div className="import-success" ref={successRef} role="status"><Icon name="check" /><strong>Produto importado com sucesso</strong></div>}{error && <p className="error-notice import-error" role="alert">{error} Os dados da prévia foram preservados; corrija a configuração e tente novamente.</p>}</section>;
+  return <section className={`import-progress-panel ${error ? "has-error" : completed ? "is-success" : ""}`} ref={panelRef} aria-live="polite"><div className="import-progress-heading"><div><p className="eyebrow">Importação do produto</p><h2>{error ? "A importação foi interrompida" : completed ? "Produto importado com sucesso" : "Importando produto..."}</h2><p>{error ? `Falha em: ${failedStep?.label || "etapa não identificada"}` : activeStep ? "A API está processando esta etapa." : "Todas as etapas foram confirmadas pela API."}</p></div><span className="import-progress-counter">{steps.filter((step) => step.status === "completed").length}/{steps.length}</span></div><div className="import-steps">{steps.map((step) => <div className={`import-step ${step.status}`} key={step.id}><span className="import-step-mark">{step.status === "completed" ? <Icon name="check" /> : step.status === "error" ? <Icon name="close" /> : step.status === "active" ? <span className="import-step-pulse" /> : <span />}</span><span className="import-step-label">{step.status === "active" ? <ShinyText text={step.label} speed={2} delay={0} color="#728589" shineColor="#ffffff" spread={120} direction="left" yoyo={false} pauseOnHover={false} disabled={false} /> : step.label.replace("...", "")}</span></div>)}</div>{completed && <div className="import-success" ref={successRef} role="status"><Icon name="check" /><strong>Produto importado com sucesso</strong></div>}{error && <p className="error-notice import-error" role="alert">{error} Os dados da prévia foram preservados; corrija a configuração e tente novamente.</p>}</section>;
 }
 
-function SpecialStatusSummary({ product }: { product: KabumProduct }) {
+function SpecialStatusSummary({ product }: { product: ProductPreview }) {
   if (!product.special_status && !product.shipping_from) return null;
   return <section className="special-status-summary" aria-label="Condição especial do produto"><div className="special-status-heading"><span>Condição especial</span><strong>{product.special_status || "Informação de envio"}</strong></div>{product.shipping_from && <div className="special-status-date"><span>Envio a partir de</span><strong>{product.shipping_from}</strong></div>}</section>;
 }
 
-function DiscardDialog({ product, onKeep, onDiscard }: { product: KabumProduct; onKeep: () => void; onDiscard: () => void }) {
+function DiscardDialog({ product, onKeep, onDiscard }: { product: ProductPreview; onKeep: () => void; onDiscard: () => void }) {
   return <div className="discard-backdrop" role="presentation"><section className="discard-dialog" role="dialog" aria-modal="true" aria-labelledby="discard-title"><span className="discard-mark"><Icon name="refresh" /></span><p className="eyebrow">Prévia em revisão</p><h2 id="discard-title">Descartar o produto anterior?</h2><p>Você começou a informar outro link. A prévia de <strong>{product.name || "produto atual"}</strong> será removida desta sessão se continuar.</p><div className="discard-actions"><button className="outline-button" onClick={onKeep}>Manter produto</button><button className="primary-button" onClick={onDiscard}>Descartar prévia</button></div></section></div>;
 }
 
-function ReviewPreview({ product, approved, onApprove, previewRef, importing }: { product: KabumProduct; approved: boolean; onApprove: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean }) {
+function ReviewPreview({ product, approved, onApprove, previewRef, importing }: { product: ProductPreview; approved: boolean; onApprove: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean }) {
   const money = (value: number | null) => value === null ? "Não informado" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
   const galleryImages = useMemo(() => {
     const seen = new Set<string>();
