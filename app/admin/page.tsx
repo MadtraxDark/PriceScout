@@ -7,7 +7,8 @@ import Link from "next/link";
 import ShinyText from "@/components/ShinyText";
 import ImageViewer, { ImageWithState } from "@/components/ImageViewer";
 import { catalogApi } from "@/utils/api/services";
-import type { CatalogProduct, CatalogStore, ProductPreview } from "@/utils/api/contracts";
+import { resolveAssetUrl } from "@/utils/api/client";
+import type { BrandAssetRecord, CatalogProduct, CatalogStore, EntityAssets, EntityAssetsPayload, ProductPreview } from "@/utils/api/contracts";
 
 type View = "overview" | "products" | "stores" | "product" | "store";
 type ScrapeStatus = "idle" | "loading" | "ready" | "error";
@@ -19,7 +20,7 @@ const scrapeProgressMessages = [
   "Coletando preços e condições...",
   "Verificando estoque e disponibilidade...",
   "Buscando marca e vendedor...",
-  "Carregando imagens em alta resolução...",
+  "Carregando imagens do produto...",
   "Preparando preview...",
 ];
 
@@ -332,7 +333,7 @@ function FormView({ view, notice, onSubmit, productUrl, onProductUrlChange, stor
       <form className="data-form" onSubmit={onSubmit}>
         <div className="form-card"><div className="form-card-heading"><span className="form-number">{isProduct ? "01" : "02"}</span><div><h2>{isProduct ? "Link do produto" : "Link do site"}</h2><p>{isProduct ? "O nome vem da página, nunca de um texto digitado manualmente." : "O link será revisado antes de entrar no monitoramento."}</p></div></div>{isProduct ? productFields : storeFields}</div>
         {isProduct && scrapeStatus === "loading" && <div className="scrape-progress" role="status" aria-live="polite"><span className="progress-pulse" /><ShinyText text={progressMessage} speed={2} delay={0} color="#728589" shineColor="#ffffff" spread={120} direction="left" yoyo={false} pauseOnHover={false} disabled={false} /></div>}
-        <div className="form-footer"><span className="secure-note">A prévia não altera o catálogo canônico antes da sua aprovação.</span><button className="primary-button" type={isProduct && scrapeStatus === "ready" ? "button" : "submit"} onClick={isProduct && scrapeStatus === "ready" ? onRevealPreview : undefined} disabled={isProduct && scrapeStatus === "loading"}><Icon name={isProduct && scrapeStatus === "loading" ? "refresh" : isProduct && scrapeStatus === "ready" && previewVisible ? "chevron-down" : "arrow"} /> {isProduct && scrapeStatus === "loading" ? "Coletando dados" : isProduct && scrapeStatus === "ready" && previewVisible ? "Sendo exibido abaixo" : isProduct && scrapeStatus === "ready" ? "Exibir prévia" : isProduct ? "Abrir prévia" : "Enviar para revisão"}</button></div>
+        <div className="form-footer"><span className="secure-note">A prévia não altera o catálogo canônico antes da sua aprovação.</span><button className="primary-button" type={isProduct && scrapeStatus === "ready" ? "button" : "submit"} onClick={isProduct && scrapeStatus === "ready" ? onRevealPreview : undefined} disabled={isProduct && scrapeStatus === "loading"}><Icon name={isProduct && scrapeStatus === "loading" ? "refresh" : isProduct && scrapeStatus === "ready" && previewVisible ? "chevron-down" : "arrow"} /> {isProduct && scrapeStatus === "loading" ? "Buscando produto" : isProduct && scrapeStatus === "ready" && previewVisible ? "Prévia exibida abaixo" : isProduct && scrapeStatus === "ready" ? "Ver prévia" : isProduct && scrapeStatus === "error" ? "Tentar novamente" : isProduct ? "Buscar produto" : "Enviar para revisão"}</button></div>
         {scrapeError && <p className="error-notice" role="alert">{scrapeError}</p>}
         {notice && <p className="success-notice" role="status"><Icon name={approvedPreview ? "check" : "refresh"} /> {notice}</p>}
       </form>
@@ -357,17 +358,112 @@ function DiscardDialog({ product, onKeep, onDiscard }: { product: ProductPreview
   return <div className="discard-backdrop" role="presentation"><section className="discard-dialog" role="dialog" aria-modal="true" aria-labelledby="discard-title"><span className="discard-mark"><Icon name="refresh" /></span><p className="eyebrow">Prévia em revisão</p><h2 id="discard-title">Descartar o produto anterior?</h2><p>Você começou a informar outro link. A prévia de <strong>{product.name || "produto atual"}</strong> será removida desta sessão se continuar.</p><div className="discard-actions"><button className="outline-button" onClick={onKeep}>Manter produto</button><button className="primary-button" onClick={onDiscard}>Descartar prévia</button></div></section></div>;
 }
 
+function formatStoreName(source?: string | null, urlStr?: string): string {
+  if (source) {
+    const s = source.toLowerCase();
+    if (s === "magazine_luiza" || s === "magazineluiza") return "Magazine Luiza";
+    if (s === "kabum") return "KaBuM!";
+    if (s === "mercadolivre" || s === "mercado_livre") return "Mercado Livre";
+    if (s === "amazon") return "Amazon Brasil";
+    if (s !== "generic" && s !== "desconhecido") {
+      return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+  }
+  if (urlStr) {
+    try {
+      const parsed = new URL(urlStr);
+      return parsed.hostname.replace(/^www\./, "");
+    } catch {}
+  }
+  return "Loja oficial";
+}
+
+type IdentityMode = "wide" | "compact";
+
+function readAssetValue(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (!value || typeof value !== "object") return null;
+  const record = value as BrandAssetRecord;
+  if (record.available === false || typeof record.asset_url !== "string" || !record.asset_url.trim()) return null;
+  return record.asset_url.trim();
+}
+
+function normalizeEntityAssets(payload: EntityAssetsPayload | null | undefined, scope?: "brand" | "store"): EntityAssets | null {
+  if (!payload || typeof payload !== "object") return null;
+  const source = scope && scope in payload
+    ? (payload as Record<string, unknown>)[scope]
+    : payload;
+  if (!source || typeof source !== "object") return null;
+  const scoped = source as Record<string, unknown>;
+  const assetMap = scoped.assets && typeof scoped.assets === "object"
+    ? scoped.assets as Record<string, unknown>
+    : scoped;
+  return {
+    logo: readAssetValue(assetMap.logo),
+    symbol: readAssetValue(assetMap.symbol),
+    icon: readAssetValue(assetMap.icon),
+    alt: typeof scoped.brand === "string" ? scoped.brand : typeof assetMap.alt === "string" ? assetMap.alt : null,
+  };
+}
+
+function EntityIdentity({ name, assets, mode, className = "" }: { name: string; assets?: EntityAssetsPayload | null; mode: IdentityMode; className?: string }) {
+  const [failedAsset, setFailedAsset] = useState<string | null>(null);
+  const normalizedAssets = normalizeEntityAssets(assets);
+  const candidates = mode === "wide"
+    ? [{ src: normalizedAssets?.logo, kind: "logo" }, { src: normalizedAssets?.symbol, kind: "symbol" }, { src: normalizedAssets?.icon, kind: "icon" }]
+    : [{ src: normalizedAssets?.symbol, kind: "symbol" }, { src: normalizedAssets?.icon, kind: "icon" }, { src: normalizedAssets?.logo, kind: "logo" }];
+  const asset = candidates.find((candidate) => candidate.src && candidate.src !== failedAsset);
+
+  if (!asset?.src) return <span className={`entity-identity entity-identity--text ${className}`}>{name}</span>;
+
+  const hasVisibleName = asset.kind !== "logo";
+  const resolvedSrc = resolveAssetUrl(asset.src);
+  return (
+    <span className={`entity-identity entity-identity--${asset.kind} ${className}`}>
+      <img
+        src={resolvedSrc}
+        alt={hasVisibleName ? "" : normalizedAssets?.alt || name}
+        crossOrigin={asset.src.startsWith("/") ? "use-credentials" : undefined}
+        onError={() => setFailedAsset(asset.src || null)}
+      />
+      {hasVisibleName && <span>{name}</span>}
+    </span>
+  );
+}
+
 function ReviewPreview({ product, approved, onApprove, previewRef, importing }: { product: ProductPreview; approved: boolean; onApprove: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean }) {
-  const money = (value: number | null) => value === null ? "Não informado" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+  const money = (value: number | null | undefined) =>
+    value === null || value === undefined
+      ? "Não informado"
+      : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+
   const galleryImages = useMemo(() => {
+    const list: Array<{ url: string; alt: string | null }> = [];
     const seen = new Set<string>();
-    return product.images.filter((image) => {
-      const key = image.url.split("?")[0].toLowerCase();
-      if (!key || seen.has(key)) return false;
+
+    const addImg = (imgUrl?: string | null, altText?: string | null) => {
+      if (!imgUrl || typeof imgUrl !== "string") return;
+      const cleanUrl = imgUrl.trim();
+      if (!cleanUrl) return;
+      const key = cleanUrl.split("?")[0].toLowerCase();
+      if (!key || seen.has(key)) return;
       seen.add(key);
-      return true;
-    });
-  }, [product.images]);
+      list.push({ url: cleanUrl, alt: altText || product.name || "Imagem do produto" });
+    };
+
+    if (product.main_image) {
+      addImg(product.main_image, product.name);
+    }
+    if (Array.isArray(product.images)) {
+      for (const img of product.images) {
+        if (img && img.url) {
+          addImg(img.url, img.alt);
+        }
+      }
+    }
+    return list;
+  }, [product.images, product.main_image, product.name]);
+
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const selectedImage = galleryImages[selectedImageIndex] ?? galleryImages[0] ?? null;
@@ -377,5 +473,223 @@ function ReviewPreview({ product, approved, onApprove, previewRef, importing }: 
     setSelectedImageIndex((current) => (current + direction + galleryImages.length) % galleryImages.length);
   }
 
-  return <section className="review-preview" ref={previewRef} aria-live="polite"><div className="review-heading"><div><p className="eyebrow">Prévia coletada</p><h2>{product.name || "Produto sem nome identificado"}</h2><p>Confira os dados extraídos da página antes de aprovar.</p></div><a className="source-link" href={product.url} target="_blank" rel="noreferrer">Abrir página <Icon name="external" /></a></div><div className="review-grid"><div className="review-main"><div className="review-brand"><span>Marca</span><strong>{product.brand || "Não identificada"}</strong></div><div className="review-fields"><div><span>Preço original</span><strong>{money(product.originalPrice)}</strong></div><div><span>PIX</span><strong className="review-accent">{money(product.pixPrice)}</strong><small>{product.pixDiscountPercent === null ? "Desconto não informado" : `${product.pixDiscountPercent}% de desconto`}</small></div><div><span>Cartão / parcelado</span><strong>{money(product.cardPrice)}</strong><small>{product.installments ? `${product.installments.quantity}x de ${money(product.installments.amount)}` : "Parcelamento não informado"}</small></div><div><span>Diferença PIX x cartão</span><strong>{money(product.priceDifferencePixToCard)}</strong></div></div><div className="review-meta"><span><b>Disponibilidade</b>{product.availability === "in_stock" ? "Em estoque" : product.availability === "out_of_stock" ? "Fora de estoque" : "Não identificada"}</span><span><b>Estoque</b>{product.stockQuantity === null ? "Não exibido" : `${product.stockQuantity} unidades`}</span><span><b>Vendido e entregue por</b>{product.seller || "Não identificado"}</span></div></div><div className="review-media"><div className="gallery-stage">{selectedImage ? <button className="gallery-main-button" type="button" onClick={() => setLightboxOpen(true)} aria-label={`Ampliar imagem ${selectedImageIndex + 1} de ${galleryImages.length}`}><ImageWithState src={selectedImage.url} alt={selectedImage.alt || product.name || "Imagem do produto"} /></button> : <div className="media-empty">Imagem não encontrada</div>}{galleryImages.length > 1 && <><button className="gallery-nav previous" type="button" onClick={() => moveImage(-1)} aria-label="Imagem anterior"><Icon name="chevron-left" /></button><button className="gallery-nav next" type="button" onClick={() => moveImage(1)} aria-label="Próxima imagem"><Icon name="chevron-right" /></button></>}</div>{galleryImages.length > 0 && <div className="gallery-thumbnails" aria-label="Imagens do produto">{galleryImages.map((image, index) => <button className={`gallery-thumbnail ${index === selectedImageIndex ? "selected" : ""}`} key={image.url} type="button" onClick={() => setSelectedImageIndex(index)} aria-label={`Ver imagem ${index + 1}`} aria-current={index === selectedImageIndex}><ImageWithState src={image.url} alt="" /></button>)}</div>}<span>{galleryImages.length} imagens em alta resolução</span></div></div><div className="review-actions"><span className="persistence-note">{approved ? "Importação concluída; o registro canônico e as relações foram confirmados." : "A loja será vinculada pelo domínio e criada junto do produto quando o catálogo estiver configurado."}</span><button className="primary-button" onClick={onApprove} disabled={approved || importing}><Icon name={importing ? "refresh" : "check"} /> {importing ? "Importando produto..." : approved ? "Prévia aprovada" : "Aprovar prévia"}</button></div><ImageViewer key={`${lightboxOpen ? "open" : "closed"}-${selectedImageIndex}`} images={galleryImages.map((image) => ({ id: image.url, src: image.url, alt: image.alt || product.name || "Imagem do produto" }))} initialIndex={selectedImageIndex} title={product.name || "Produto sem nome identificado"} open={lightboxOpen} onClose={() => setLightboxOpen(false)} /></section>;
+  const storeLabel = formatStoreName(product.source, product.url);
+  const storeAssets = normalizeEntityAssets(product.store_assets ?? product.brand_assets, "store");
+  const brandAssets = normalizeEntityAssets(product.brand_assets, "brand");
+
+  return (
+    <section className="review-preview" ref={previewRef} aria-live="polite">
+      <div className="review-heading">
+        <div>
+          <p className="eyebrow">Prévia coletada</p>
+          <h2>{product.name || "Produto sem nome identificado"}</h2>
+          {Array.isArray(product.taxonomy) && product.taxonomy.length > 0 && (
+            <div className="review-taxonomy" aria-label="Categorias do produto">
+              {product.taxonomy.map((item, idx) => (
+                <span key={item.slug || item.name || idx} className="review-taxonomy-item">
+                  {item.name}
+                </span>
+              ))}
+            </div>
+          )}
+          <p>Confira os dados extraídos da página antes de aprovar.</p>
+        </div>
+        <a className="source-link" href={product.url} target="_blank" rel="noreferrer">
+          Abrir página <Icon name="external" />
+        </a>
+      </div>
+
+      <div className="review-grid">
+        <div className="review-main">
+          <div className="review-brand">
+            <div className="review-brand-header">
+              <div>
+                <span>Marca</span>
+                <EntityIdentity
+                  name={product.brand || "Não identificada"}
+                  assets={brandAssets}
+                  mode="wide"
+                  className="review-brand-identity"
+                />
+              </div>
+            </div>
+
+            <div className="review-identity-tags">
+              <span className="review-tag">
+                <b>Loja</b>
+                <EntityIdentity name={storeLabel} assets={storeAssets} mode="compact" />
+              </span>
+              {product.mpn && (
+                <span className="review-tag">
+                  <b>Código do fabricante</b> {product.mpn}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="review-fields">
+            <div>
+              <span>Preço original</span>
+              <strong>{money(product.originalPrice)}</strong>
+              <small>Valor de referência</small>
+            </div>
+            <div>
+              <span>Preço no Pix</span>
+              <strong className="review-accent">{money(product.pixPrice)}</strong>
+              <small>
+                {product.pixDiscountPercent === null || product.pixDiscountPercent === undefined
+                  ? "Desconto não informado"
+                  : `${product.pixDiscountPercent}% de desconto`}
+              </small>
+            </div>
+            <div>
+              <span>Preço no cartão</span>
+              <strong>{money(product.cardPrice)}</strong>
+              <small>
+                {product.installments?.quantity && product.installments?.amount
+                  ? `${product.installments.quantity}x de ${money(product.installments.amount)}`
+                  : "Parcelamento não informado"}
+              </small>
+            </div>
+            <div>
+              <span>Economia no Pix</span>
+              <strong>{money(product.priceDifferencePixToCard)}</strong>
+              <small>Comparado ao cartão</small>
+            </div>
+          </div>
+
+          <div className="review-meta">
+            <span>
+              <b>Disponibilidade</b>
+              {product.availability === "in_stock"
+                ? "Em estoque"
+                : product.availability === "out_of_stock"
+                ? "Fora de estoque"
+                : "Não identificada"}
+            </span>
+            <span>
+              <b>Estoque</b>
+              {product.stockQuantity === null || product.stockQuantity === undefined
+                ? "Não exibido"
+                : `${product.stockQuantity} unidades`}
+            </span>
+            <span>
+              <b>Vendido por</b>
+              <EntityIdentity name={product.seller || "Não identificado"} assets={product.seller_assets} mode="wide" />
+            </span>
+            <span>
+              <b>Entregue por</b>
+              <EntityIdentity
+                name={product.deliveryResponsible || product.seller || "Não identificado"}
+                assets={product.delivery_assets}
+                mode="wide"
+              />
+            </span>
+            {product.special_status && (
+              <span>
+                <b>Condição especial</b>
+                {product.special_status}
+              </span>
+            )}
+            {product.shipping_from && (
+              <span>
+                <b>Envio a partir de</b>
+                {product.shipping_from}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="review-media">
+          <div className="gallery-stage">
+            {selectedImage ? (
+              <button
+                className="gallery-main-button"
+                type="button"
+                onClick={() => setLightboxOpen(true)}
+                aria-label={`Ampliar imagem ${selectedImageIndex + 1} de ${galleryImages.length}`}
+              >
+                <ImageWithState
+                  src={selectedImage.url}
+                  alt={selectedImage.alt || product.name || "Imagem do produto"}
+                />
+              </button>
+            ) : (
+              <div className="media-empty">Imagem não encontrada</div>
+            )}
+            {galleryImages.length > 1 && (
+              <>
+                <button
+                  className="gallery-nav previous"
+                  type="button"
+                  onClick={() => moveImage(-1)}
+                  aria-label="Imagem anterior"
+                >
+                  <Icon name="chevron-left" />
+                </button>
+                <button
+                  className="gallery-nav next"
+                  type="button"
+                  onClick={() => moveImage(1)}
+                  aria-label="Próxima imagem"
+                >
+                  <Icon name="chevron-right" />
+                </button>
+              </>
+            )}
+          </div>
+          {galleryImages.length > 0 && (
+            <div className="gallery-thumbnails" aria-label="Imagens do produto">
+              {galleryImages.map((image, index) => (
+                <button
+                  className={`gallery-thumbnail ${index === selectedImageIndex ? "selected" : ""}`}
+                  key={image.url}
+                  type="button"
+                  onClick={() => setSelectedImageIndex(index)}
+                  aria-label={`Ver imagem ${index + 1}`}
+                  aria-current={index === selectedImageIndex}
+                >
+                  <ImageWithState src={image.url} alt="" />
+                </button>
+              ))}
+            </div>
+          )}
+          <span className="gallery-summary">
+            {galleryImages.length === 1
+              ? "1 imagem do produto encontrada"
+              : `${galleryImages.length} imagens do produto encontradas`}
+          </span>
+        </div>
+      </div>
+
+      <div className="review-actions">
+        <span className="persistence-note">
+          {approved
+            ? "Importação concluída; o registro canônico e as relações foram confirmados."
+            : "A loja será vinculada pelo domínio e criada junto do produto quando o catálogo estiver configurado."}
+        </span>
+        <button
+          className="primary-button"
+          onClick={onApprove}
+          disabled={approved || importing}
+        >
+          <Icon name={importing ? "refresh" : "check"} />{" "}
+          {importing ? "Importando produto..." : approved ? "Prévia aprovada" : "Aprovar prévia"}
+        </button>
+      </div>
+
+      <ImageViewer
+        key={`${lightboxOpen ? "open" : "closed"}-${selectedImageIndex}`}
+        images={galleryImages.map((image) => ({
+          id: image.url,
+          src: image.url,
+          alt: image.alt || product.name || "Imagem do produto",
+        }))}
+        initialIndex={selectedImageIndex}
+        title={product.name || "Produto sem nome identificado"}
+        open={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+      />
+    </section>
+  );
 }

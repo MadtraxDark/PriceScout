@@ -18,23 +18,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
 
-    // Se houver tokens no hash ou query da URL (retorno de OAuth), armazena imediatamente
-    if (typeof window !== "undefined") {
-      try {
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        const searchParams = new URLSearchParams(window.location.search.substring(1));
-        const token = hashParams.get("access_token") || searchParams.get("access_token");
-        const refreshToken = hashParams.get("refresh_token") || searchParams.get("refresh_token");
-        if (token) {
-          localStorage.setItem("access_token", token);
-          if (refreshToken) localStorage.setItem("refresh_token", refreshToken);
-          sessionStorage.setItem("access_token", token);
-        }
-      } catch {
-        // Ignora erro de parsing
-      }
-    }
-
     void authApi.me().then((identity) => {
       if (!active) return;
       if (!identity.is_admin) {

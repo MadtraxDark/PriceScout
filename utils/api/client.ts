@@ -48,6 +48,11 @@ export function apiUrl(path: string, query?: RequestOptions["query"]): string {
   return url.toString();
 }
 
+export function resolveAssetUrl(value: string): string {
+  if (/^https?:\/\//i.test(value)) return value;
+  return apiUrl(value);
+}
+
 async function parseResponse(response: Response): Promise<unknown> {
   if (response.status === 204) return undefined;
   const contentType = response.headers.get("content-type") ?? "";
@@ -73,6 +78,31 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
   });
   const payload = await parseResponse(response);
+
+  if (!response.ok && response.status === 401 && !path.includes("/auth/refresh") && !path.includes("/auth/login")) {
+    const refreshResponse = await fetch(apiUrl("/api/v1/auth/refresh"), {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      credentials: "include",
+      body: "{}",
+    });
+    if (refreshResponse.ok) {
+      const retry = await fetch(apiUrl(path, query), {
+        ...requestInit,
+        headers: requestHeaders,
+        credentials: "include",
+        body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
+      });
+      const retryPayload = await parseResponse(retry);
+      if (retry.ok) return retryPayload as T;
+      if (retry.status !== 401) {
+        const retryMessage = retryPayload && typeof retryPayload === "object" && "detail" in retryPayload
+          ? String((retryPayload as { detail: unknown }).detail)
+          : `A API respondeu com status ${retry.status}.`;
+        throw new ApiError(retryMessage, retry.status, retryPayload);
+      }
+    }
+  }
 
   if (!response.ok) {
     const message =

@@ -73,7 +73,7 @@ export const authApi = {
       },
       // is_admin e determinado estritamente pelo role retornado pela API.
       // Nunca usar || true aqui - isso tornaria qualquer usuario autenticado admin.
-      is_admin: user.role === "admin" || user.role === "authenticated",
+      is_admin: user.role === "admin",
     };
   },
 
@@ -165,14 +165,22 @@ export const catalogApi = {
     return api.post<{ image: ProductImage }>(`/api/v1/catalog/products/${encodeURIComponent(id)}/images`, { imageUrl });
   },
 
-  async updateProductImages(id: string, imageIds: string[], primaryImageId?: string): Promise<void> {
-    return api.patch<void>(`/api/v1/catalog/products/${encodeURIComponent(id)}/images`, {
-      imageIds,
-      ...(primaryImageId ? { primaryImageId } : {}),
+  async updateProductImages(id: string, imageIds: string[], primaryImageId: string): Promise<{
+    product_id: string;
+    primary_image_id: string;
+    images: ProductImage[];
+  }> {
+    return api.patch(`/api/v1/catalog/products/${encodeURIComponent(id)}/images`, {
+      image_ids: imageIds,
+      primary_image_id: primaryImageId,
     });
   },
 
   async deleteProductImage(id: string, imageId: string): Promise<void> {
     return api.delete<void>(`/api/v1/catalog/products/${encodeURIComponent(id)}/images`, { query: { imageId } });
+  },
+
+  async deleteProduct(id: string): Promise<{ success: boolean; product_id: string; images_removed: number; message: string }> {
+    return api.delete<{ success: boolean; product_id: string; images_removed: number; message: string }>(`/api/v1/catalog/products/${encodeURIComponent(id)}`);
   },
 };

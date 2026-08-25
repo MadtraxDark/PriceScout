@@ -45,3 +45,4 @@ A rota `/auth/callback` esperava `code` ou tokens na URL e persistia tokens em `
 - [completed] Alinhar callback ao cookie HttpOnly
 - [completed] Remover persistencia e reanexo de tokens no storage
 - [completed] Executar lint e build
+- [completed] Confirmar que o endpoint rejeita resultados parciais e só aceita sucesso completo
