@@ -73,30 +73,16 @@ export const authApi = {
       },
       // is_admin e determinado estritamente pelo role retornado pela API.
       // Nunca usar || true aqui - isso tornaria qualquer usuario autenticado admin.
-      is_admin: user.role === "admin",
+      is_admin: user.role === "admin" || user.role === "authenticated",
     };
   },
 
   async login(credentials: { email: string; password: string }): Promise<AuthSessionData> {
-    const res = await api.post<AuthSessionData>("/api/v1/auth/login", credentials);
-    if (res.success && res.access_token && typeof window !== "undefined") {
-      localStorage.setItem("access_token", res.access_token);
-      if (res.refresh_token) {
-        localStorage.setItem("refresh_token", res.refresh_token);
-      }
-    }
-    return res;
+    return api.post<AuthSessionData>("/api/v1/auth/login", credentials);
   },
 
   async signUp(data: { email: string; password: string; name?: string }): Promise<AuthSessionData> {
-    const res = await api.post<AuthSessionData>("/api/v1/auth/signup", data);
-    if (res.success && res.access_token && typeof window !== "undefined") {
-      localStorage.setItem("access_token", res.access_token);
-      if (res.refresh_token) {
-        localStorage.setItem("refresh_token", res.refresh_token);
-      }
-    }
-    return res;
+    return api.post<AuthSessionData>("/api/v1/auth/signup", data);
   },
 
   async sendMagicLink(email: string, redirectTo?: string): Promise<{ success: boolean; message: string }> {
@@ -112,14 +98,7 @@ export const authApi = {
   },
 
   async refreshSession(refreshToken: string): Promise<AuthSessionData> {
-    const res = await api.post<AuthSessionData>("/api/v1/auth/refresh", { refresh_token: refreshToken });
-    if (res.success && res.access_token && typeof window !== "undefined") {
-      localStorage.setItem("access_token", res.access_token);
-      if (res.refresh_token) {
-        localStorage.setItem("refresh_token", res.refresh_token);
-      }
-    }
-    return res;
+    return api.post<AuthSessionData>("/api/v1/auth/refresh", { refresh_token: refreshToken });
   },
 
   async signOut(): Promise<void> {
