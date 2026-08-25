@@ -35,49 +35,68 @@ export interface AuthSessionData {
 }
 
 export const authApi = {
+  // Gera a URL do endpoint FastAPI que inicia o fluxo OAuth.
+  // O browser deve navegar diretamente para essa URL (window.location.href),
+  // nunca via fetch. A FastAPI retorna 302 para o Supabase/Google.
   signInUrl(nextPath: string): string | null {
     if (!hasApiConfiguration()) return null;
-    const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
-    const callbackTarget = `${origin}${nextPath.startsWith("/") ? nextPath : `/${nextPath}`}`;
+    // window.location.origin so esta disponivel no browser (client component).
+    // Nunca use isso em Server Components.
+    const origin =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const safePath =
+      typeof nextPath === "string" && nextPath.startsWith("/") && !nextPath.startsWith("//")
+        ? nextPath
+        : "/admin";
+    const callbackTarget = `${origin}/auth/callback?next=${encodeURIComponent(safePath)}`;
     return apiUrl("/api/v1/auth/google/login", { redirect_frontend_url: callbackTarget });
   },
 
   async me(): Promise<AuthUserResponse> {
-    try {
-      const user = await api.get<{
-        id: string;
-        email: string;
-        name: string | null;
-        avatar_url: string | null;
-        role: string;
-      }>("/api/v1/auth/me");
+    // Se a requisicao falhar (401, 403, etc), propaga o erro normalmente.
+    // NUNCA retornar usuario fake em caso de falha - isso e uma vulnerabilidade de seguranca.
+    const user = await api.get<{
+      id: string;
+      email: string;
+      name: string | null;
+      avatar_url: string | null;
+      role: string;
+    }>("/api/v1/auth/me");
 
-      return {
-        user: {
-          id: user.id,
-          name: user.name || user.email,
-          email: user.email,
-        },
-        is_admin: true,
-      };
-    } catch {
-      return {
-        user: {
-          id: "local_dev_user",
-          name: "Desenvolvedor",
-          email: "dev@pricescout.local",
-        },
-        is_admin: true,
-      };
-    }
+    return {
+      user: {
+        id: user.id,
+        name: user.name || user.email,
+        email: user.email,
+      },
+      // is_admin e determinado estritamente pelo role retornado pela API.
+      // Nunca usar || true aqui - isso tornaria qualquer usuario autenticado admin.
+      is_admin: user.role === "admin",
+    };
   },
 
   async login(credentials: { email: string; password: string }): Promise<AuthSessionData> {
-    return api.post<AuthSessionData>("/api/v1/auth/login", credentials);
+    const res = await api.post<AuthSessionData>("/api/v1/auth/login", credentials);
+    if (res.success && res.access_token && typeof window !== "undefined") {
+      localStorage.setItem("access_token", res.access_token);
+      if (res.refresh_token) {
+        localStorage.setItem("refresh_token", res.refresh_token);
+      }
+    }
+    return res;
   },
 
   async signUp(data: { email: string; password: string; name?: string }): Promise<AuthSessionData> {
-    return api.post<AuthSessionData>("/api/v1/auth/signup", data);
+    const res = await api.post<AuthSessionData>("/api/v1/auth/signup", data);
+    if (res.success && res.access_token && typeof window !== "undefined") {
+      localStorage.setItem("access_token", res.access_token);
+      if (res.refresh_token) {
+        localStorage.setItem("refresh_token", res.refresh_token);
+      }
+    }
+    return res;
   },
 
   async sendMagicLink(email: string, redirectTo?: string): Promise<{ success: boolean; message: string }> {
@@ -93,11 +112,27 @@ export const authApi = {
   },
 
   async refreshSession(refreshToken: string): Promise<AuthSessionData> {
-    return api.post<AuthSessionData>("/api/v1/auth/refresh", { refresh_token: refreshToken });
+    const res = await api.post<AuthSessionData>("/api/v1/auth/refresh", { refresh_token: refreshToken });
+    if (res.success && res.access_token && typeof window !== "undefined") {
+      localStorage.setItem("access_token", res.access_token);
+      if (res.refresh_token) {
+        localStorage.setItem("refresh_token", res.refresh_token);
+      }
+    }
+    return res;
   },
 
   async signOut(): Promise<void> {
-    await api.post<void>("/api/v1/auth/logout");
+    try {
+      await api.post<void>("/api/v1/auth/logout");
+    } finally {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+        sessionStorage.removeItem("access_token");
+        sessionStorage.removeItem("refresh_token");
+      }
+    }
   },
 };
 

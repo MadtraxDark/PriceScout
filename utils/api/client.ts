@@ -29,10 +29,10 @@ export function hasApiConfiguration(): boolean {
 
 function requireApiBaseUrl(): string {
   if (!API_BASE_URL) {
-    throw new Error("NEXT_PUBLIC_API_BASE_URL não está configurada.");
+    throw new Error("NEXT_PUBLIC_API_BASE_URL nao esta configurada.");
   }
   if (!hasApiConfiguration()) {
-    throw new Error("NEXT_PUBLIC_API_BASE_URL deve conter uma URL HTTP ou HTTPS válida.");
+    throw new Error("NEXT_PUBLIC_API_BASE_URL deve conter uma URL HTTP ou HTTPS valida.");
   }
   return API_BASE_URL;
 }
@@ -54,6 +54,34 @@ async function parseResponse(response: Response): Promise<unknown> {
   return contentType.includes("application/json") ? response.json() : response.text();
 }
 
+// Verifica se o token do localStorage esta presente E parece valido (nao expirado).
+// Tokens invalidos/expirados nao devem ser enviados para nao conflitar com cookies HttpOnly.
+function getStoredToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const token = localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
+    if (!token) return null;
+
+    // Verifica expiracao basica via payload JWT (sem verificar assinatura)
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+
+    const payload = JSON.parse(atob(parts[1]));
+    const exp = typeof payload.exp === "number" ? payload.exp : null;
+    if (exp !== null && Date.now() / 1000 > exp) {
+      // Token expirado: limpa o storage para evitar reenvios futuros
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
+      sessionStorage.removeItem("access_token");
+      return null;
+    }
+
+    return token;
+  } catch {
+    return null;
+  }
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { body, headers, query, ...requestInit } = options;
   const requestHeaders = new Headers(headers);
@@ -66,15 +94,12 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     requestHeaders.set("Accept", "application/json");
   }
 
-  // Anexa automaticamente o token JWT se presente na sessao do navegador
-  if (!requestHeaders.has("Authorization") && typeof window !== "undefined") {
-    try {
-      const token = localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
-      if (token) {
-        requestHeaders.set("Authorization", `Bearer ${token}`);
-      }
-    } catch {
-      // Ignora erro de acesso ao storage
+  // Anexa o token JWT apenas se presente, valido e nao expirado.
+  // Tokens expirados sao silenciosamente ignorados para nao conflitar com cookies HttpOnly.
+  if (!requestHeaders.has("Authorization")) {
+    const token = getStoredToken();
+    if (token) {
+      requestHeaders.set("Authorization", `Bearer ${token}`);
     }
   }
 
