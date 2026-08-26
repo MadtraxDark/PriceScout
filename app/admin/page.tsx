@@ -1,14 +1,14 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import type { RefObject } from "react";
+import type { CSSProperties, RefObject } from "react";
 import { gsap } from "gsap";
 import Link from "next/link";
 import ShinyText from "@/components/ShinyText";
 import ImageViewer, { ImageWithState } from "@/components/ImageViewer";
 import { catalogApi } from "@/utils/api/services";
 import { resolveAssetUrl } from "@/utils/api/client";
-import type { BrandAssetRecord, CatalogProduct, CatalogStore, EntityAssets, EntityAssetsPayload, ProductPreview } from "@/utils/api/contracts";
+import type { BrandAssetRecord, CatalogProduct, CatalogStore, EntityAssets, EntityAssetsPayload, LogoVisualMetadata, ProductPreview } from "@/utils/api/contracts";
 
 type View = "overview" | "products" | "stores" | "product" | "store";
 type ScrapeStatus = "idle" | "loading" | "ready" | "error";
@@ -388,10 +388,27 @@ function readAssetValue(value: unknown): string | null {
   return record.asset_url.trim();
 }
 
-function normalizeEntityAssets(payload: EntityAssetsPayload | null | undefined, scope?: "brand" | "store"): EntityAssets | null {
+function readVisualMetadata(value: unknown): LogoVisualMetadata | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as BrandAssetRecord;
+  const visual = record.visual;
+  if (!visual || typeof visual !== "object") return null;
+  return visual;
+}
+
+type NormalizedEntityAssets = EntityAssets & {
+  visualByKind?: Partial<Record<"logo" | "symbol" | "icon", LogoVisualMetadata | null>>;
+};
+
+function normalizeEntityAssets(payload: EntityAssetsPayload | null | undefined, scope?: "brand" | "store"): NormalizedEntityAssets | null {
   if (!payload || typeof payload !== "object") return null;
-  const source = scope && scope in payload
-    ? (payload as Record<string, unknown>)[scope]
+  const payloadRecord = payload as Record<string, unknown>;
+  const hasScope = Boolean(scope && Object.prototype.hasOwnProperty.call(payloadRecord, scope));
+  const looksLikeDirectAsset = ["logo", "symbol", "icon", "assets", "visual"].some((key) => key in payloadRecord);
+  const source = scope && hasScope
+    ? payloadRecord[scope]
+    : scope && !looksLikeDirectAsset
+    ? null
     : payload;
   if (!source || typeof source !== "object") return null;
   const scoped = source as Record<string, unknown>;
@@ -402,6 +419,12 @@ function normalizeEntityAssets(payload: EntityAssetsPayload | null | undefined, 
     logo: readAssetValue(assetMap.logo),
     symbol: readAssetValue(assetMap.symbol),
     icon: readAssetValue(assetMap.icon),
+    visual: readVisualMetadata(assetMap.logo) || readVisualMetadata(scoped.visual),
+    visualByKind: {
+      logo: readVisualMetadata(assetMap.logo),
+      symbol: readVisualMetadata(assetMap.symbol),
+      icon: readVisualMetadata(assetMap.icon),
+    },
     alt: typeof scoped.brand === "string" ? scoped.brand : typeof assetMap.alt === "string" ? assetMap.alt : null,
   };
 }
@@ -410,16 +433,22 @@ function EntityIdentity({ name, assets, mode, className = "" }: { name: string; 
   const [failedAsset, setFailedAsset] = useState<string | null>(null);
   const normalizedAssets = normalizeEntityAssets(assets);
   const candidates = mode === "wide"
-    ? [{ src: normalizedAssets?.logo, kind: "logo" }, { src: normalizedAssets?.symbol, kind: "symbol" }, { src: normalizedAssets?.icon, kind: "icon" }]
-    : [{ src: normalizedAssets?.symbol, kind: "symbol" }, { src: normalizedAssets?.icon, kind: "icon" }, { src: normalizedAssets?.logo, kind: "logo" }];
+    ? [{ src: normalizedAssets?.logo, kind: "logo" as const }, { src: normalizedAssets?.symbol, kind: "symbol" as const }, { src: normalizedAssets?.icon, kind: "icon" as const }]
+    : [{ src: normalizedAssets?.symbol, kind: "symbol" as const }, { src: normalizedAssets?.icon, kind: "icon" as const }, { src: normalizedAssets?.logo, kind: "logo" as const }];
   const asset = candidates.find((candidate) => candidate.src && candidate.src !== failedAsset);
 
   if (!asset?.src) return <span className={`entity-identity entity-identity--text ${className}`}>{name}</span>;
 
   const hasVisibleName = asset.kind !== "logo";
   const resolvedSrc = resolveAssetUrl(asset.src);
+  const visual = normalizedAssets?.visualByKind?.[asset.kind] || normalizedAssets?.visual || null;
+  const background = visual?.recommended_background || "neutral";
+  const visualStyle = {
+    "--entity-logo-dominant": visual?.dominant_color || "transparent",
+    "--entity-logo-foreground": visual?.foreground_color || "currentColor",
+  } as CSSProperties;
   return (
-    <span className={`entity-identity entity-identity--${asset.kind} ${className}`}>
+    <span className={`entity-identity entity-identity--${asset.kind} entity-identity--bg-${background} ${className}`} style={visualStyle}>
       <img
         src={resolvedSrc}
         alt={hasVisibleName ? "" : normalizedAssets?.alt || name}

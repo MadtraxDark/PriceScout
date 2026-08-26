@@ -38,6 +38,17 @@ export type EntityAssets = {
   symbol?: string | null;
   icon?: string | null;
   alt?: string | null;
+  visual?: LogoVisualMetadata | null;
+};
+
+export type LogoVisualMetadata = {
+  logo_id?: string | null;
+  analysis_status?: "pending" | "ready" | "failed" | null;
+  dominant_color?: string | null;
+  average_luminance?: number | null;
+  has_transparency?: boolean | null;
+  recommended_background?: "light" | "dark" | "neutral" | null;
+  foreground_color?: string | null;
 };
 
 export type BrandAssetRecord = {
@@ -46,6 +57,8 @@ export type BrandAssetRecord = {
   available?: boolean;
   source?: string;
   asset_url?: string | null;
+  logo_id?: string | null;
+  visual?: LogoVisualMetadata | null;
   drive_file_ids?: string[];
   drive_file_names?: string[];
   error?: string | null;

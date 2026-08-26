@@ -88,6 +88,12 @@
 .review-brand .review-tag b { color:#5d7479; font:600 9px var(--mono); letter-spacing:.04em; text-transform:uppercase; }
 .entity-identity { display:inline-flex; min-width:0; align-items:center; gap:8px; color:inherit; }
 .entity-identity img { display:block; max-width:100%; object-fit:contain; object-position:left center; }
+.entity-identity--logo,.entity-identity--symbol,.entity-identity--icon { border-radius:6px; }
+.entity-identity--logo { padding:4px 8px; border:1px solid var(--line); }
+.entity-identity--symbol,.entity-identity--icon { padding:2px; }
+.entity-identity--bg-light { background:#fff; color:var(--entity-logo-foreground,currentColor); }
+.entity-identity--bg-dark { background:var(--ink); color:#f7f8f4; }
+.entity-identity--bg-neutral { background:var(--surface); color:var(--entity-logo-foreground,currentColor); }
 .entity-identity--wide img { max-width:190px; max-height:34px; }
 .entity-identity--compact { gap:6px; }
 .entity-identity--compact img { width:20px; height:20px; }
