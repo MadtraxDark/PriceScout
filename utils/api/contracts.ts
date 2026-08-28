@@ -33,6 +33,13 @@ export type ProductPreview = {
   images: Array<{ url: string; alt: string | null; width: number | null; height: number | null }>;
 };
 
+export type ProductPreviewResponse = {
+  product: ProductPreview;
+  preview_id?: string;
+  expires_at?: string;
+  status?: "ready";
+};
+
 export type EntityAssets = {
   logo?: string | null;
   symbol?: string | null;

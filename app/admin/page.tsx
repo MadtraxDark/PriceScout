@@ -1,14 +1,14 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, RefObject } from "react";
+import type { RefObject } from "react";
 import { gsap } from "gsap";
 import Link from "next/link";
 import ShinyText from "@/components/ShinyText";
 import ImageViewer, { ImageWithState } from "@/components/ImageViewer";
 import { catalogApi } from "@/utils/api/services";
-import { resolveAssetUrl } from "@/utils/api/client";
-import type { BrandAssetRecord, CatalogProduct, CatalogStore, EntityAssets, EntityAssetsPayload, LogoVisualMetadata, ProductPreview } from "@/utils/api/contracts";
+import { ApiError } from "@/utils/api/client";
+import type { CatalogProduct, CatalogStore, ProductPreview } from "@/utils/api/contracts";
 
 type View = "overview" | "products" | "stores" | "product" | "store";
 type ScrapeStatus = "idle" | "loading" | "ready" | "error";
@@ -89,7 +89,9 @@ export default function Home() {
   const [storeUrl, setStoreUrl] = useState("");
   const [scrapeStatus, setScrapeStatus] = useState<ScrapeStatus>("idle");
   const [scrapedProduct, setScrapedProduct] = useState<ProductPreview | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const [scrapeError, setScrapeError] = useState("");
+  const [existingProductId, setExistingProductId] = useState<string | null>(null);
   const [approvedPreview, setApprovedPreview] = useState(false);
   const [discardPrompt, setDiscardPrompt] = useState(false);
   const [reviewedUrl, setReviewedUrl] = useState("");
@@ -153,6 +155,30 @@ export default function Home() {
   }, [scrapedProduct]);
 
   useEffect(() => {
+    const savedPreview = window.localStorage.getItem("pricescout:product-preview");
+    const restorePreview = async () => {
+      if (!savedPreview) return;
+      try {
+        const saved = JSON.parse(savedPreview) as { previewId?: string; product?: ProductPreview; expiresAt?: string; url?: string };
+        if (saved.expiresAt && new Date(saved.expiresAt) <= new Date()) throw new Error("expired");
+        let result: { product?: ProductPreview };
+        try {
+          result = saved.previewId ? await catalogApi.getPreview(saved.previewId) : { product: saved.product };
+        } catch {
+          result = { product: saved.product };
+        }
+        if (!result.product) throw new Error("missing");
+        setPreviewId(saved.previewId ?? null);
+        setView("product");
+        setProductUrl(saved.url ?? result.product.url);
+        setReviewedUrl(saved.url ?? result.product.url);
+        setScrapedProduct(result.product);
+        setScrapeStatus("ready");
+      } catch {
+        window.localStorage.removeItem("pricescout:product-preview");
+      }
+    };
+    void restorePreview();
     void Promise.all([catalogApi.listProducts(), catalogApi.listStores()]).then(([productsResult, storesResult]) => {
       setCatalogProducts(productsResult.products ?? []);
       setCatalogStores(storesResult.stores ?? []);
@@ -185,7 +211,9 @@ export default function Home() {
   async function submitProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!parseHttpUrl(productUrl)) { setScrapeStatus("error"); setScrapeError("Informe um link de produto válido usando http:// ou https://."); return; }
-    setScrapeStatus("loading"); setScrapeError(""); setNotice(""); setScrapedProduct(null); setApprovedPreview(false); setProgressIndex(0);
+    if (previewId) void catalogApi.discardPreview(previewId).catch(() => undefined);
+    window.localStorage.removeItem("pricescout:product-preview");
+    setPreviewId(null); setExistingProductId(null); setScrapeStatus("loading"); setScrapeError(""); setNotice(""); setScrapedProduct(null); setApprovedPreview(false); setProgressIndex(0);
     let currentProgressIndex = 0;
     const progressTimer = window.setInterval(() => {
       currentProgressIndex = (currentProgressIndex + 1) % scrapeProgressMessages.length;
@@ -195,10 +223,15 @@ export default function Home() {
       const result = await catalogApi.previewProduct(productUrl);
       if (!result.product) throw new Error("A API não retornou a prévia do produto.");
       setProgressIndex(scrapeProgressMessages.length - 1);
-      setScrapedProduct(result.product); setReviewedUrl(productUrl); setScrapeStatus("ready");
+      setScrapedProduct(result.product); setReviewedUrl(productUrl); setPreviewId(result.preview_id ?? null); setScrapeStatus("ready");
+      window.localStorage.setItem("pricescout:product-preview", JSON.stringify({ previewId: result.preview_id, product: result.product, expiresAt: result.expires_at, url: productUrl }));
       window.setTimeout(revealPreview, 80);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Não foi possível coletar os dados do produto.";
+      if (error instanceof ApiError && error.status === 409 && error.details && typeof error.details === "object" && "detail" in error.details) {
+        const detail = (error.details as { detail?: { product_id?: string } }).detail;
+        setExistingProductId(detail?.product_id ?? null);
+      }
       setScrapeStatus("error"); setScrapeError(`Falha na etapa “${scrapeProgressMessages[currentProgressIndex]}” ${message}`);
     } finally {
       window.clearInterval(progressTimer);
@@ -220,7 +253,7 @@ export default function Home() {
       completeStep("request");
       currentStepId = "processing";
       setStep(currentStepId, "active");
-      const result = await catalogApi.importProduct(scrapedProduct);
+      const result = await catalogApi.importProduct(scrapedProduct, previewId ?? undefined);
       completeStep("processing");
       currentStepId = "refresh";
       setStep(currentStepId, "active");
@@ -235,6 +268,9 @@ export default function Home() {
       window.setTimeout(() => {
         setProductUrl("");
         setScrapedProduct(null);
+        setPreviewId(null);
+        setExistingProductId(null);
+        window.localStorage.removeItem("pricescout:product-preview");
         setScrapeStatus("idle");
         setScrapeError("");
         setApprovedPreview(false);
@@ -265,7 +301,11 @@ export default function Home() {
   }
 
   function discardPreviousProduct() {
+    if (previewId) void catalogApi.discardPreview(previewId).catch(() => undefined);
+    window.localStorage.removeItem("pricescout:product-preview");
     setScrapedProduct(null);
+    setPreviewId(null);
+    setExistingProductId(null);
     setApprovedPreview(false);
     setReviewedUrl("");
     setDiscardPrompt(false);
@@ -288,11 +328,18 @@ export default function Home() {
     }
   }
 
-  function openView(nextView: View) { setView(nextView); setNotice(""); setScrapeError(""); }
+  function openView(nextView: View) {
+    setView(nextView);
+    setNotice("");
+    setScrapeError("");
+    const params = new URLSearchParams(window.location.search);
+    params.set("view", nextView);
+    window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+  }
 
   return <main className="admin-shell">
     <aside className="sidebar"><div className="sidebar-top"><Logo /><span className="admin-badge">admin</span></div><nav className="main-nav" aria-label="Navegação principal"><p className="nav-label">Workspace</p>{navItems.map((item) => <button key={item.id} className={`nav-item ${view === item.id ? "active" : ""}`} onClick={() => openView(item.id)}><Icon name={item.icon} /><span>{item.label}</span>{item.id === "overview" && <span className="nav-arrow"><Icon name="arrow" /></span>}</button>)}</nav><div className="sidebar-note"><span className="live-dot" /><div><strong>API conectada</strong><span>Operações centralizadas</span></div></div><div className="sidebar-bottom"><div className="user-profile"><span className="avatar">--</span><span><strong>Conta administrativa</strong><small>Identidade não carregada</small></span></div></div></aside>
-    <section className="content-shell"><header className="topbar"><div className="mobile-logo"><Logo /></div><div className="search-box"><Icon name="search" /><input aria-label="Buscar no PriceScout" placeholder="Buscar no catálogo" /></div><div className="topbar-actions"><button className="icon-action" aria-label="Notificações"><Icon name="bell" /></button><div className="topbar-divider" /><span className="environment">API externa</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <Overview openView={openView} /> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : view === "stores" ? <CatalogView kind="stores" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : <FormView view={view} notice={notice} onSubmit={view === "product" ? submitProduct : submitStore} productUrl={productUrl} onProductUrlChange={changeProductUrl} storeName={storeName} setStoreName={setStoreName} storeUrl={storeUrl} setStoreUrl={setStoreUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} approvedPreview={approvedPreview} onApprove={approvePreview} progressMessage={scrapeProgressMessages[progressIndex]} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}</section>
+    <section className="content-shell"><header className="topbar"><div className="mobile-logo"><Logo /></div><div className="search-box"><Icon name="search" /><input aria-label="Buscar no PriceScout" placeholder="Buscar no catálogo" /></div><div className="topbar-actions"><button className="icon-action" aria-label="Notificações"><Icon name="bell" /></button><div className="topbar-divider" /><span className="environment">API externa</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <Overview openView={openView} /> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : view === "stores" ? <CatalogView kind="stores" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : <FormView view={view} notice={notice} onSubmit={view === "product" ? submitProduct : submitStore} productUrl={productUrl} onProductUrlChange={changeProductUrl} storeName={storeName} setStoreName={setStoreName} storeUrl={storeUrl} setStoreUrl={setStoreUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} existingProductId={existingProductId} approvedPreview={approvedPreview} onApprove={approvePreview} progressMessage={scrapeProgressMessages[progressIndex]} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}</section>
   </main>;
 }
 
@@ -310,7 +357,7 @@ function CatalogView({ kind, openView, products, stores, loading }: { kind: "pro
   return <div className="catalog-page"><div className="page-intro"><div><p className="eyebrow">Catálogo</p><h1>{isProducts ? "Produtos cadastrados." : "Lojas cadastradas."}</h1><p className="intro-copy">{isProducts ? "Identifique rapidamente cada produto pela imagem e pelo nome." : "Consulte as lojas e sites confirmados como fontes oficiais."}</p></div><button className="primary-button" onClick={() => openView(isProducts ? "product" : "store")}><Icon name="plus" /> {isProducts ? "Adicionar produto" : "Adicionar site por link"}</button></div>{loading ? <section className="empty-state"><h2>Carregando registros...</h2></section> : rows.length === 0 ? <section className="empty-state"><span className="empty-icon"><Icon name={isProducts ? "box" : "store"} /></span><h2>Nenhum registro disponível</h2><p>{isProducts ? "Os produtos aparecerão aqui depois que forem cadastrados e aprovados." : "As lojas aparecerão aqui depois que forem cadastradas e aprovadas."}</p><button className="outline-button" onClick={() => openView(isProducts ? "product" : "store")}><Icon name="plus" /> {isProducts ? "Cadastrar produto" : "Adicionar site por link"}</button></section> : isProducts ? <section className="catalog-grid" aria-label="Produtos cadastrados">{products.map((product) => <article className="catalog-card" key={product.id}><Link className="catalog-card-manage" href={`/admin/produtos/${product.id}`} aria-label={`Gerenciar ${product.name}`}><div className="catalog-card-media">{product.image_url ? <MediaImage key={product.image_url} src={product.image_url} alt="" className="catalog-media-image" /> : <span className="catalog-card-media-empty"><Icon name="box" /><span>Imagem não disponível</span></span>}</div><div className="catalog-card-body"><h2>{product.name}</h2><span className="catalog-card-link">Gerenciar produto <Icon name="arrow" /></span></div></Link><a className="catalog-card-source" href={product.product_url} target="_blank" rel="noreferrer">Abrir origem <Icon name="external" /></a></article>)}</section> : <section className="catalog-list">{stores.map((store) => <article className="catalog-row" key={store.id}><div className="catalog-row-icon"><Icon name="store" /></div><div className="catalog-row-main"><strong>{store.name}</strong><span>{store.hostname}</span></div><div className="catalog-row-meta"><b>{store.productCount} {store.productCount === 1 ? "produto" : "produtos"}</b><span>{store.url}</span></div><a className="catalog-row-link" href={store.url} target="_blank" rel="noreferrer" aria-label={`Abrir ${store.name}`}><Icon name="external" /></a></article>)}</section>}</div>;
 }
 
-function FormView({ view, notice, onSubmit, productUrl, onProductUrlChange, storeName, setStoreName, storeUrl, setStoreUrl, scrapeStatus, scrapedProduct, scrapeError, approvedPreview, onApprove, progressMessage, previewVisible, onRevealPreview, previewRef, importing, importSteps, importError, importPanelRef, importSuccessRef }: { view: "product" | "store"; notice: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; productUrl: string; onProductUrlChange: (value: string) => void; storeName: string; setStoreName: (value: string) => void; storeUrl: string; setStoreUrl: (value: string) => void; scrapeStatus: ScrapeStatus; scrapedProduct: ProductPreview | null; scrapeError: string; approvedPreview: boolean; onApprove: () => void; progressMessage: string; previewVisible: boolean; onRevealPreview: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; importSteps: ImportStep[]; importError: string; importPanelRef: RefObject<HTMLDivElement | null>; importSuccessRef: RefObject<HTMLDivElement | null> }) {
+function FormView({ view, notice, onSubmit, productUrl, onProductUrlChange, storeName, setStoreName, storeUrl, setStoreUrl, scrapeStatus, scrapedProduct, scrapeError, existingProductId, approvedPreview, onApprove, progressMessage, previewVisible, onRevealPreview, previewRef, importing, importSteps, importError, importPanelRef, importSuccessRef }: { view: "product" | "store"; notice: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; productUrl: string; onProductUrlChange: (value: string) => void; storeName: string; setStoreName: (value: string) => void; storeUrl: string; setStoreUrl: (value: string) => void; scrapeStatus: ScrapeStatus; scrapedProduct: ProductPreview | null; scrapeError: string; existingProductId: string | null; approvedPreview: boolean; onApprove: () => void; progressMessage: string; previewVisible: boolean; onRevealPreview: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; importSteps: ImportStep[]; importError: string; importPanelRef: RefObject<HTMLDivElement | null>; importSuccessRef: RefObject<HTMLDivElement | null> }) {
   const isProduct = view === "product";
   const detectedUrl = useMemo(() => parseHttpUrl(isProduct ? productUrl : storeUrl), [isProduct, productUrl, storeUrl]);
   const productFields = <>
@@ -334,7 +381,7 @@ function FormView({ view, notice, onSubmit, productUrl, onProductUrlChange, stor
         <div className="form-card"><div className="form-card-heading"><span className="form-number">{isProduct ? "01" : "02"}</span><div><h2>{isProduct ? "Link do produto" : "Link do site"}</h2><p>{isProduct ? "O nome vem da página, nunca de um texto digitado manualmente." : "O link será revisado antes de entrar no monitoramento."}</p></div></div>{isProduct ? productFields : storeFields}</div>
         {isProduct && scrapeStatus === "loading" && <div className="scrape-progress" role="status" aria-live="polite"><span className="progress-pulse" /><ShinyText text={progressMessage} speed={2} delay={0} color="#728589" shineColor="#ffffff" spread={120} direction="left" yoyo={false} pauseOnHover={false} disabled={false} /></div>}
         <div className="form-footer"><span className="secure-note">A prévia não altera o catálogo canônico antes da sua aprovação.</span><button className="primary-button" type={isProduct && scrapeStatus === "ready" ? "button" : "submit"} onClick={isProduct && scrapeStatus === "ready" ? onRevealPreview : undefined} disabled={isProduct && scrapeStatus === "loading"}><Icon name={isProduct && scrapeStatus === "loading" ? "refresh" : isProduct && scrapeStatus === "ready" && previewVisible ? "chevron-down" : "arrow"} /> {isProduct && scrapeStatus === "loading" ? "Buscando produto" : isProduct && scrapeStatus === "ready" && previewVisible ? "Prévia exibida abaixo" : isProduct && scrapeStatus === "ready" ? "Ver prévia" : isProduct && scrapeStatus === "error" ? "Tentar novamente" : isProduct ? "Buscar produto" : "Enviar para revisão"}</button></div>
-        {scrapeError && <p className="error-notice" role="alert">{scrapeError}</p>}
+        {scrapeError && <p className="error-notice" role="alert">{scrapeError}{existingProductId && <> <Link href={`/admin/produtos/${existingProductId}`}>Abrir produto cadastrado.</Link></>}</p>}
         {notice && <p className="success-notice" role="status"><Icon name={approvedPreview ? "check" : "refresh"} /> {notice}</p>}
       </form>
     </div>
@@ -376,88 +423,6 @@ function formatStoreName(source?: string | null, urlStr?: string): string {
     } catch {}
   }
   return "Loja oficial";
-}
-
-type IdentityMode = "wide" | "compact";
-
-function readAssetValue(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  if (!value || typeof value !== "object") return null;
-  const record = value as BrandAssetRecord;
-  if (record.available === false || typeof record.asset_url !== "string" || !record.asset_url.trim()) return null;
-  return record.asset_url.trim();
-}
-
-function readVisualMetadata(value: unknown): LogoVisualMetadata | null {
-  if (!value || typeof value !== "object") return null;
-  const record = value as BrandAssetRecord;
-  const visual = record.visual;
-  if (!visual || typeof visual !== "object") return null;
-  return visual;
-}
-
-type NormalizedEntityAssets = EntityAssets & {
-  visualByKind?: Partial<Record<"logo" | "symbol" | "icon", LogoVisualMetadata | null>>;
-};
-
-function normalizeEntityAssets(payload: EntityAssetsPayload | null | undefined, scope?: "brand" | "store"): NormalizedEntityAssets | null {
-  if (!payload || typeof payload !== "object") return null;
-  const payloadRecord = payload as Record<string, unknown>;
-  const hasScope = Boolean(scope && Object.prototype.hasOwnProperty.call(payloadRecord, scope));
-  const looksLikeDirectAsset = ["logo", "symbol", "icon", "assets", "visual"].some((key) => key in payloadRecord);
-  const source = scope && hasScope
-    ? payloadRecord[scope]
-    : scope && !looksLikeDirectAsset
-    ? null
-    : payload;
-  if (!source || typeof source !== "object") return null;
-  const scoped = source as Record<string, unknown>;
-  const assetMap = scoped.assets && typeof scoped.assets === "object"
-    ? scoped.assets as Record<string, unknown>
-    : scoped;
-  return {
-    logo: readAssetValue(assetMap.logo),
-    symbol: readAssetValue(assetMap.symbol),
-    icon: readAssetValue(assetMap.icon),
-    visual: readVisualMetadata(assetMap.logo) || readVisualMetadata(scoped.visual),
-    visualByKind: {
-      logo: readVisualMetadata(assetMap.logo),
-      symbol: readVisualMetadata(assetMap.symbol),
-      icon: readVisualMetadata(assetMap.icon),
-    },
-    alt: typeof scoped.brand === "string" ? scoped.brand : typeof assetMap.alt === "string" ? assetMap.alt : null,
-  };
-}
-
-function EntityIdentity({ name, assets, mode, className = "" }: { name: string; assets?: EntityAssetsPayload | null; mode: IdentityMode; className?: string }) {
-  const [failedAsset, setFailedAsset] = useState<string | null>(null);
-  const normalizedAssets = normalizeEntityAssets(assets);
-  const candidates = mode === "wide"
-    ? [{ src: normalizedAssets?.logo, kind: "logo" as const }, { src: normalizedAssets?.symbol, kind: "symbol" as const }, { src: normalizedAssets?.icon, kind: "icon" as const }]
-    : [{ src: normalizedAssets?.symbol, kind: "symbol" as const }, { src: normalizedAssets?.icon, kind: "icon" as const }, { src: normalizedAssets?.logo, kind: "logo" as const }];
-  const asset = candidates.find((candidate) => candidate.src && candidate.src !== failedAsset);
-
-  if (!asset?.src) return <span className={`entity-identity entity-identity--text ${className}`}>{name}</span>;
-
-  const hasVisibleName = asset.kind !== "logo";
-  const resolvedSrc = resolveAssetUrl(asset.src);
-  const visual = normalizedAssets?.visualByKind?.[asset.kind] || normalizedAssets?.visual || null;
-  const background = visual?.recommended_background || "neutral";
-  const visualStyle = {
-    "--entity-logo-dominant": visual?.dominant_color || "transparent",
-    "--entity-logo-foreground": visual?.foreground_color || "currentColor",
-  } as CSSProperties;
-  return (
-    <span className={`entity-identity entity-identity--${asset.kind} entity-identity--bg-${background} ${className}`} style={visualStyle}>
-      <img
-        src={resolvedSrc}
-        alt={hasVisibleName ? "" : normalizedAssets?.alt || name}
-        crossOrigin={asset.src.startsWith("/") ? "use-credentials" : undefined}
-        onError={() => setFailedAsset(asset.src || null)}
-      />
-      {hasVisibleName && <span>{name}</span>}
-    </span>
-  );
 }
 
 function ReviewPreview({ product, approved, onApprove, previewRef, importing }: { product: ProductPreview; approved: boolean; onApprove: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean }) {
@@ -503,8 +468,6 @@ function ReviewPreview({ product, approved, onApprove, previewRef, importing }: 
   }
 
   const storeLabel = formatStoreName(product.source, product.url);
-  const storeAssets = normalizeEntityAssets(product.store_assets ?? product.brand_assets, "store");
-  const brandAssets = normalizeEntityAssets(product.brand_assets, "brand");
 
   return (
     <section className="review-preview" ref={previewRef} aria-live="polite">
@@ -534,25 +497,14 @@ function ReviewPreview({ product, approved, onApprove, previewRef, importing }: 
             <div className="review-brand-header">
               <div>
                 <span>Marca</span>
-                <EntityIdentity
-                  name={product.brand || "Não identificada"}
-                  assets={brandAssets}
-                  mode="wide"
-                  className="review-brand-identity"
-                />
+                <strong className="review-brand-identity">{product.brand || "Não identificada"}</strong>
               </div>
             </div>
 
             <div className="review-identity-tags">
               <span className="review-tag">
-                <b>Loja</b>
-                <EntityIdentity name={storeLabel} assets={storeAssets} mode="compact" />
+                <b>Loja</b> {storeLabel}
               </span>
-              {product.mpn && (
-                <span className="review-tag">
-                  <b>Código do fabricante</b> {product.mpn}
-                </span>
-              )}
             </div>
           </div>
 
@@ -604,15 +556,11 @@ function ReviewPreview({ product, approved, onApprove, previewRef, importing }: 
             </span>
             <span>
               <b>Vendido por</b>
-              <EntityIdentity name={product.seller || "Não identificado"} assets={product.seller_assets} mode="wide" />
+              {product.seller || "Não identificado"}
             </span>
             <span>
               <b>Entregue por</b>
-              <EntityIdentity
-                name={product.deliveryResponsible || product.seller || "Não identificado"}
-                assets={product.delivery_assets}
-                mode="wide"
-              />
+              {product.deliveryResponsible || product.seller || "Não identificado"}
             </span>
             {product.special_status && (
               <span>

@@ -5,6 +5,7 @@ import type {
   Product,
   ProductImage,
   ProductPreview,
+  ProductPreviewResponse,
   TaxonomyItem,
 } from "@/utils/api/contracts";
 
@@ -128,12 +129,20 @@ export const catalogApi = {
     return api.post<{ store: CatalogStore }>("/api/v1/catalog/stores", input);
   },
 
-  async previewProduct(url: string): Promise<{ product: ProductPreview }> {
-    return api.post<{ product: ProductPreview }>("/api/v1/catalog/products/preview", { url });
+  async previewProduct(url: string): Promise<ProductPreviewResponse> {
+    return api.post<ProductPreviewResponse>("/api/v1/catalog/products/preview", { url });
   },
 
-  async importProduct(product: ProductPreview): Promise<{ product: CatalogProduct; message?: string }> {
-    return api.post<{ product: CatalogProduct; message?: string }>("/api/v1/catalog/products/import", { product });
+  async getPreview(previewId: string): Promise<ProductPreviewResponse> {
+    return api.get<ProductPreviewResponse>(`/api/v1/catalog/products/previews/${encodeURIComponent(previewId)}`, { cache: "no-store" });
+  },
+
+  async discardPreview(previewId: string): Promise<void> {
+    await api.delete(`/api/v1/catalog/products/previews/${encodeURIComponent(previewId)}`);
+  },
+
+  async importProduct(product: ProductPreview, previewId?: string): Promise<{ product: CatalogProduct; message?: string }> {
+    return api.post<{ product: CatalogProduct; message?: string }>("/api/v1/catalog/products/import", previewId ? { preview_id: previewId } : { product });
   },
 
   async getProduct(id: string): Promise<{ product: Product; images: ProductImage[]; taxonomy: TaxonomyItem[] }> {

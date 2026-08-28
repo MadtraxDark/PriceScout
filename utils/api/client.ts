@@ -48,11 +48,6 @@ export function apiUrl(path: string, query?: RequestOptions["query"]): string {
   return url.toString();
 }
 
-export function resolveAssetUrl(value: string): string {
-  if (/^https?:\/\//i.test(value)) return value;
-  return apiUrl(value);
-}
-
 async function parseResponse(response: Response): Promise<unknown> {
   if (response.status === 204) return undefined;
   const contentType = response.headers.get("content-type") ?? "";
@@ -107,14 +102,20 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   if (!response.ok) {
     const message =
       payload && typeof payload === "object" && "detail" in payload
-        ? String((payload as { detail: unknown }).detail)
+        ? formatApiDetail((payload as { detail: unknown }).detail)
         : payload && typeof payload === "object" && "error" in payload
-        ? String((payload as { error: unknown }).error)
+        ? formatApiDetail((payload as { error: unknown }).error)
         : `A API respondeu com status ${response.status}.`;
     throw new ApiError(message, response.status, payload);
   }
 
   return payload as T;
+}
+
+function formatApiDetail(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object" && "message" in detail) return String((detail as { message: unknown }).message);
+  return JSON.stringify(detail);
 }
 
 export const api = {
