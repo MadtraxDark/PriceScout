@@ -17,3 +17,4 @@ Guardar o `preview_id` retornado pela API junto da URL e expiracao em `localStor
 - A previa sobrevive ao ciclo de vida do componente e da aplicacao.
 - O conteudo canonico continua vindo do backend sempre que ele estiver disponivel.
 - O frontend trata `409` com link para o produto existente e `410` como previa expirada.
+- O conflito de produto e renderizado como aviso visual com miniatura real quando disponivel, nome, data de cadastro e link interno para o catalogo; o botao de importacao fica bloqueado.

@@ -8,12 +8,40 @@ import ShinyText from "@/components/ShinyText";
 import ImageViewer, { ImageWithState } from "@/components/ImageViewer";
 import { catalogApi } from "@/utils/api/services";
 import { ApiError } from "@/utils/api/client";
-import type { CatalogProduct, CatalogStore, ProductPreview } from "@/utils/api/contracts";
+import type { CatalogProduct, CatalogStore, ExistingCatalogProduct, ProductPreview } from "@/utils/api/contracts";
 
 type View = "overview" | "products" | "stores" | "product" | "store";
 type ScrapeStatus = "idle" | "loading" | "ready" | "error";
 type ImportStepStatus = "pending" | "active" | "completed" | "error";
 type ImportStep = { id: string; label: string; status: ImportStepStatus };
+
+function duplicateProductFromError(error: unknown): ExistingCatalogProduct | null {
+  if (!(error instanceof ApiError) || error.status !== 409 || !error.details || typeof error.details !== "object") return null;
+  const detail = "detail" in error.details && error.details.detail && typeof error.details.detail === "object"
+    ? error.details.detail as { existing_product?: ExistingCatalogProduct }
+    : null;
+  return detail?.existing_product ?? null;
+}
+
+function formatCatalogDate(value?: string | null): string {
+  if (!value) return "Data não informada";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Data não informada";
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "long" }).format(date);
+}
+
+function canonicalProductUrl(value: string): string {
+  try {
+    const url = new URL(value.trim());
+    url.hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    url.search = "";
+    url.hash = "";
+    url.pathname = url.pathname.replace(/\/+$/, "") || "/";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return value.trim().toLowerCase().replace(/\/+$/, "");
+  }
+}
 const scrapeProgressMessages = [
   "Acessando página do produto...",
   "Identificando produto...",
@@ -92,6 +120,7 @@ export default function Home() {
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [scrapeError, setScrapeError] = useState("");
   const [existingProductId, setExistingProductId] = useState<string | null>(null);
+  const [duplicateProduct, setDuplicateProduct] = useState<ExistingCatalogProduct | null>(null);
   const [approvedPreview, setApprovedPreview] = useState(false);
   const [discardPrompt, setDiscardPrompt] = useState(false);
   const [reviewedUrl, setReviewedUrl] = useState("");
@@ -102,6 +131,7 @@ export default function Home() {
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState("");
   const [importing, setImporting] = useState(false);
+  const importInFlightRef = useRef(false);
   const [importSteps, setImportSteps] = useState<ImportStep[]>(initialImportSteps);
   const [importError, setImportError] = useState("");
   const importPanelRef = useRef<HTMLDivElement | null>(null);
@@ -211,9 +241,37 @@ export default function Home() {
   async function submitProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!parseHttpUrl(productUrl)) { setScrapeStatus("error"); setScrapeError("Informe um link de produto válido usando http:// ou https://."); return; }
+    const canonicalUrl = canonicalProductUrl(productUrl);
+    const existingByUrl = catalogProducts.find((product) => canonicalProductUrl(product.product_url) === canonicalUrl);
+    if (existingByUrl) {
+      const duplicate: ExistingCatalogProduct = {
+        id: existingByUrl.id,
+        name: existingByUrl.name,
+        brand: existingByUrl.brand,
+        product_url: existingByUrl.product_url,
+        main_image_url: existingByUrl.main_image_url || existingByUrl.image_url,
+        created_at: null,
+      };
+      setExistingProductId(duplicate.id);
+      setDuplicateProduct(duplicate);
+      setScrapeStatus("error");
+      setScrapeError("Produto já cadastrado. A prévia não pode ser importada novamente.");
+      setNotice("");
+      void catalogApi.getProduct(existingByUrl.id).then(({ product }) => {
+        setDuplicateProduct((current) => current?.id === product.id ? {
+          ...current,
+          name: product.name,
+          brand: product.brand,
+          product_url: product.product_url,
+          main_image_url: product.primary_image_url || current.main_image_url,
+          created_at: product.created_at,
+        } : current);
+      }).catch(() => undefined);
+      return;
+    }
     if (previewId) void catalogApi.discardPreview(previewId).catch(() => undefined);
     window.localStorage.removeItem("pricescout:product-preview");
-    setPreviewId(null); setExistingProductId(null); setScrapeStatus("loading"); setScrapeError(""); setNotice(""); setScrapedProduct(null); setApprovedPreview(false); setProgressIndex(0);
+    setPreviewId(null); setExistingProductId(null); setDuplicateProduct(null); setScrapeStatus("loading"); setScrapeError(""); setNotice(""); setScrapedProduct(null); setApprovedPreview(false); setProgressIndex(0);
     let currentProgressIndex = 0;
     const progressTimer = window.setInterval(() => {
       currentProgressIndex = (currentProgressIndex + 1) % scrapeProgressMessages.length;
@@ -228,18 +286,18 @@ export default function Home() {
       window.setTimeout(revealPreview, 80);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Não foi possível coletar os dados do produto.";
-      if (error instanceof ApiError && error.status === 409 && error.details && typeof error.details === "object" && "detail" in error.details) {
-        const detail = (error.details as { detail?: { product_id?: string } }).detail;
-        setExistingProductId(detail?.product_id ?? null);
-      }
-      setScrapeStatus("error"); setScrapeError(`Falha na etapa “${scrapeProgressMessages[currentProgressIndex]}” ${message}`);
+      const duplicate = duplicateProductFromError(error);
+      setExistingProductId(duplicate?.id ?? null);
+      setDuplicateProduct(duplicate);
+      setScrapeStatus("error"); setScrapeError(duplicate ? "Produto já cadastrado. A prévia não pode ser importada novamente." : `Falha na etapa “${scrapeProgressMessages[currentProgressIndex]}” ${message}`);
     } finally {
       window.clearInterval(progressTimer);
     }
   }
 
   async function approvePreview() {
-    if (!scrapedProduct || importing || approvedPreview) return;
+    if (!scrapedProduct || importing || importInFlightRef.current || approvedPreview || duplicateProduct) return;
+    importInFlightRef.current = true;
     setImporting(true);
     setImportError("");
     setNotice("");
@@ -263,6 +321,7 @@ export default function Home() {
       setNotice(result.message || "Produto importado e confirmado pela API.");
       window.setTimeout(() => {
         setImporting(false);
+        importInFlightRef.current = false;
         if (importSuccessRef.current) gsap.fromTo(importSuccessRef.current, { opacity: 0, y: 8, scale: 0.98 }, { opacity: 1, y: 0, scale: 1, duration: 0.45, ease: "power2.out" });
       }, 420);
       window.setTimeout(() => {
@@ -270,6 +329,7 @@ export default function Home() {
         setScrapedProduct(null);
         setPreviewId(null);
         setExistingProductId(null);
+        setDuplicateProduct(null);
         window.localStorage.removeItem("pricescout:product-preview");
         setScrapeStatus("idle");
         setScrapeError("");
@@ -284,14 +344,27 @@ export default function Home() {
     } catch (error) {
       setStep(currentStepId, "error");
       const message = error instanceof Error ? error.message : "Não foi possível concluir a importação.";
-      setImportError(message);
-      setNotice("A importação foi interrompida. Os dados da prévia foram preservados para nova tentativa.");
+      const duplicate = duplicateProductFromError(error);
+      setExistingProductId(duplicate?.id ?? null);
+      setDuplicateProduct(duplicate);
+      if (duplicate) {
+        if (previewId) void catalogApi.discardPreview(previewId).catch(() => undefined);
+        window.localStorage.removeItem("pricescout:product-preview");
+        setPreviewId(null);
+      }
+      setImportError(duplicate ? "Produto já cadastrado. A importação foi interrompida." : message);
+      setNotice(duplicate ? "A importação foi interrompida porque o produto já está cadastrado." : "A importação foi interrompida. Os dados da prévia foram preservados para nova tentativa.");
       setImporting(false);
+      importInFlightRef.current = false;
     }
   }
 
   function changeProductUrl(value: string) {
     setProductUrl(value);
+    if (value !== reviewedUrl) {
+      setExistingProductId(null);
+      setDuplicateProduct(null);
+    }
     if (scrapedProduct && !discardPrompt && value !== reviewedUrl) setDiscardPrompt(true);
   }
 
@@ -306,6 +379,7 @@ export default function Home() {
     setScrapedProduct(null);
     setPreviewId(null);
     setExistingProductId(null);
+    setDuplicateProduct(null);
     setApprovedPreview(false);
     setReviewedUrl("");
     setDiscardPrompt(false);
@@ -339,7 +413,7 @@ export default function Home() {
 
   return <main className="admin-shell">
     <aside className="sidebar"><div className="sidebar-top"><Logo /><span className="admin-badge">admin</span></div><nav className="main-nav" aria-label="Navegação principal"><p className="nav-label">Workspace</p>{navItems.map((item) => <button key={item.id} className={`nav-item ${view === item.id ? "active" : ""}`} onClick={() => openView(item.id)}><Icon name={item.icon} /><span>{item.label}</span>{item.id === "overview" && <span className="nav-arrow"><Icon name="arrow" /></span>}</button>)}</nav><div className="sidebar-note"><span className="live-dot" /><div><strong>API conectada</strong><span>Operações centralizadas</span></div></div><div className="sidebar-bottom"><div className="user-profile"><span className="avatar">--</span><span><strong>Conta administrativa</strong><small>Identidade não carregada</small></span></div></div></aside>
-    <section className="content-shell"><header className="topbar"><div className="mobile-logo"><Logo /></div><div className="search-box"><Icon name="search" /><input aria-label="Buscar no PriceScout" placeholder="Buscar no catálogo" /></div><div className="topbar-actions"><button className="icon-action" aria-label="Notificações"><Icon name="bell" /></button><div className="topbar-divider" /><span className="environment">API externa</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <Overview openView={openView} /> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : view === "stores" ? <CatalogView kind="stores" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : <FormView view={view} notice={notice} onSubmit={view === "product" ? submitProduct : submitStore} productUrl={productUrl} onProductUrlChange={changeProductUrl} storeName={storeName} setStoreName={setStoreName} storeUrl={storeUrl} setStoreUrl={setStoreUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} existingProductId={existingProductId} approvedPreview={approvedPreview} onApprove={approvePreview} progressMessage={scrapeProgressMessages[progressIndex]} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}</section>
+    <section className="content-shell"><header className="topbar"><div className="mobile-logo"><Logo /></div><div className="search-box"><Icon name="search" /><input aria-label="Buscar no PriceScout" placeholder="Buscar no catálogo" /></div><div className="topbar-actions"><button className="icon-action" aria-label="Notificações"><Icon name="bell" /></button><div className="topbar-divider" /><span className="environment">API externa</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <Overview openView={openView} /> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : view === "stores" ? <CatalogView kind="stores" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : <FormView view={view} notice={notice} onSubmit={view === "product" ? submitProduct : submitStore} productUrl={productUrl} onProductUrlChange={changeProductUrl} storeName={storeName} setStoreName={setStoreName} storeUrl={storeUrl} setStoreUrl={setStoreUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} existingProductId={existingProductId} duplicateProduct={duplicateProduct} approvedPreview={approvedPreview} onApprove={approvePreview} progressMessage={scrapeProgressMessages[progressIndex]} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}</section>
   </main>;
 }
 
@@ -357,7 +431,7 @@ function CatalogView({ kind, openView, products, stores, loading }: { kind: "pro
   return <div className="catalog-page"><div className="page-intro"><div><p className="eyebrow">Catálogo</p><h1>{isProducts ? "Produtos cadastrados." : "Lojas cadastradas."}</h1><p className="intro-copy">{isProducts ? "Identifique rapidamente cada produto pela imagem e pelo nome." : "Consulte as lojas e sites confirmados como fontes oficiais."}</p></div><button className="primary-button" onClick={() => openView(isProducts ? "product" : "store")}><Icon name="plus" /> {isProducts ? "Adicionar produto" : "Adicionar site por link"}</button></div>{loading ? <section className="empty-state"><h2>Carregando registros...</h2></section> : rows.length === 0 ? <section className="empty-state"><span className="empty-icon"><Icon name={isProducts ? "box" : "store"} /></span><h2>Nenhum registro disponível</h2><p>{isProducts ? "Os produtos aparecerão aqui depois que forem cadastrados e aprovados." : "As lojas aparecerão aqui depois que forem cadastradas e aprovadas."}</p><button className="outline-button" onClick={() => openView(isProducts ? "product" : "store")}><Icon name="plus" /> {isProducts ? "Cadastrar produto" : "Adicionar site por link"}</button></section> : isProducts ? <section className="catalog-grid" aria-label="Produtos cadastrados">{products.map((product) => <article className="catalog-card" key={product.id}><Link className="catalog-card-manage" href={`/admin/produtos/${product.id}`} aria-label={`Gerenciar ${product.name}`}><div className="catalog-card-media">{product.image_url ? <MediaImage key={product.image_url} src={product.image_url} alt="" className="catalog-media-image" /> : <span className="catalog-card-media-empty"><Icon name="box" /><span>Imagem não disponível</span></span>}</div><div className="catalog-card-body"><h2>{product.name}</h2><span className="catalog-card-link">Gerenciar produto <Icon name="arrow" /></span></div></Link><a className="catalog-card-source" href={product.product_url} target="_blank" rel="noreferrer">Abrir origem <Icon name="external" /></a></article>)}</section> : <section className="catalog-list">{stores.map((store) => <article className="catalog-row" key={store.id}><div className="catalog-row-icon"><Icon name="store" /></div><div className="catalog-row-main"><strong>{store.name}</strong><span>{store.hostname}</span></div><div className="catalog-row-meta"><b>{store.productCount} {store.productCount === 1 ? "produto" : "produtos"}</b><span>{store.url}</span></div><a className="catalog-row-link" href={store.url} target="_blank" rel="noreferrer" aria-label={`Abrir ${store.name}`}><Icon name="external" /></a></article>)}</section>}</div>;
 }
 
-function FormView({ view, notice, onSubmit, productUrl, onProductUrlChange, storeName, setStoreName, storeUrl, setStoreUrl, scrapeStatus, scrapedProduct, scrapeError, existingProductId, approvedPreview, onApprove, progressMessage, previewVisible, onRevealPreview, previewRef, importing, importSteps, importError, importPanelRef, importSuccessRef }: { view: "product" | "store"; notice: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; productUrl: string; onProductUrlChange: (value: string) => void; storeName: string; setStoreName: (value: string) => void; storeUrl: string; setStoreUrl: (value: string) => void; scrapeStatus: ScrapeStatus; scrapedProduct: ProductPreview | null; scrapeError: string; existingProductId: string | null; approvedPreview: boolean; onApprove: () => void; progressMessage: string; previewVisible: boolean; onRevealPreview: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; importSteps: ImportStep[]; importError: string; importPanelRef: RefObject<HTMLDivElement | null>; importSuccessRef: RefObject<HTMLDivElement | null> }) {
+function FormView({ view, notice, onSubmit, productUrl, onProductUrlChange, storeName, setStoreName, storeUrl, setStoreUrl, scrapeStatus, scrapedProduct, scrapeError, existingProductId, duplicateProduct, approvedPreview, onApprove, progressMessage, previewVisible, onRevealPreview, previewRef, importing, importSteps, importError, importPanelRef, importSuccessRef }: { view: "product" | "store"; notice: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; productUrl: string; onProductUrlChange: (value: string) => void; storeName: string; setStoreName: (value: string) => void; storeUrl: string; setStoreUrl: (value: string) => void; scrapeStatus: ScrapeStatus; scrapedProduct: ProductPreview | null; scrapeError: string; existingProductId: string | null; duplicateProduct: ExistingCatalogProduct | null; approvedPreview: boolean; onApprove: () => void; progressMessage: string; previewVisible: boolean; onRevealPreview: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; importSteps: ImportStep[]; importError: string; importPanelRef: RefObject<HTMLDivElement | null>; importSuccessRef: RefObject<HTMLDivElement | null> }) {
   const isProduct = view === "product";
   const detectedUrl = useMemo(() => parseHttpUrl(isProduct ? productUrl : storeUrl), [isProduct, productUrl, storeUrl]);
   const productFields = <>
@@ -381,19 +455,37 @@ function FormView({ view, notice, onSubmit, productUrl, onProductUrlChange, stor
         <div className="form-card"><div className="form-card-heading"><span className="form-number">{isProduct ? "01" : "02"}</span><div><h2>{isProduct ? "Link do produto" : "Link do site"}</h2><p>{isProduct ? "O nome vem da página, nunca de um texto digitado manualmente." : "O link será revisado antes de entrar no monitoramento."}</p></div></div>{isProduct ? productFields : storeFields}</div>
         {isProduct && scrapeStatus === "loading" && <div className="scrape-progress" role="status" aria-live="polite"><span className="progress-pulse" /><ShinyText text={progressMessage} speed={2} delay={0} color="#728589" shineColor="#ffffff" spread={120} direction="left" yoyo={false} pauseOnHover={false} disabled={false} /></div>}
         <div className="form-footer"><span className="secure-note">A prévia não altera o catálogo canônico antes da sua aprovação.</span><button className="primary-button" type={isProduct && scrapeStatus === "ready" ? "button" : "submit"} onClick={isProduct && scrapeStatus === "ready" ? onRevealPreview : undefined} disabled={isProduct && scrapeStatus === "loading"}><Icon name={isProduct && scrapeStatus === "loading" ? "refresh" : isProduct && scrapeStatus === "ready" && previewVisible ? "chevron-down" : "arrow"} /> {isProduct && scrapeStatus === "loading" ? "Buscando produto" : isProduct && scrapeStatus === "ready" && previewVisible ? "Prévia exibida abaixo" : isProduct && scrapeStatus === "ready" ? "Ver prévia" : isProduct && scrapeStatus === "error" ? "Tentar novamente" : isProduct ? "Buscar produto" : "Enviar para revisão"}</button></div>
-        {scrapeError && <p className="error-notice" role="alert">{scrapeError}{existingProductId && <> <Link href={`/admin/produtos/${existingProductId}`}>Abrir produto cadastrado.</Link></>}</p>}
+        {scrapeError && <p className="error-notice" role="alert">{scrapeError}{existingProductId && !duplicateProduct && <> <Link href={`/admin/produtos/${existingProductId}`}>Abrir produto cadastrado.</Link></>}</p>}
+        {duplicateProduct && !scrapedProduct && <DuplicateProductNotice product={duplicateProduct} />}
         {notice && <p className="success-notice" role="status"><Icon name={approvedPreview ? "check" : "refresh"} /> {notice}</p>}
       </form>
     </div>
-    {scrapedProduct && <><SpecialStatusSummary product={scrapedProduct} />{(importing || approvedPreview || importError) && <ImportProgress steps={importSteps} importing={importing} error={importError} panelRef={importPanelRef} successRef={importSuccessRef} />}<ReviewPreview product={scrapedProduct} approved={approvedPreview} onApprove={onApprove} previewRef={previewRef} importing={importing} /></>}
+    {scrapedProduct && <><SpecialStatusSummary product={scrapedProduct} />{(importing || approvedPreview || importError) && <ImportProgress steps={importSteps} importing={importing} error={importError} blocked={Boolean(duplicateProduct)} panelRef={importPanelRef} successRef={importSuccessRef} />}{duplicateProduct && <DuplicateProductNotice product={duplicateProduct} />}<ReviewPreview product={scrapedProduct} approved={approvedPreview} onApprove={onApprove} previewRef={previewRef} importing={importing} blocked={Boolean(duplicateProduct)} /></>}
   </div>;
 }
 
-function ImportProgress({ steps, importing, error, panelRef, successRef }: { steps: ImportStep[]; importing: boolean; error: string; panelRef: RefObject<HTMLDivElement | null>; successRef: RefObject<HTMLDivElement | null> }) {
+function DuplicateProductNotice({ product }: { product: ExistingCatalogProduct }) {
+  const createdAtLabel = formatCatalogDate(product.created_at);
+  const imageUrl = product.main_image_url;
+
+  return <section className="duplicate-product-notice" role="alert" aria-label="Produto já cadastrado">
+    <div className="duplicate-product-media">
+      {imageUrl ? <ImageWithState src={imageUrl} alt={product.name || "Produto já cadastrado"} /> : <span>Sem miniatura</span>}
+    </div>
+    <div className="duplicate-product-content">
+      <p className="eyebrow">Produto já cadastrado</p>
+      <h2>{product.name || "Produto sem nome"}</h2>
+      <p>Cadastrado em {createdAtLabel}.</p>
+      <Link className="outline-button duplicate-product-link" href={`/admin/produtos/${product.id}`}>Abrir produto no catálogo</Link>
+    </div>
+  </section>;
+}
+
+function ImportProgress({ steps, importing, error, blocked, panelRef, successRef }: { steps: ImportStep[]; importing: boolean; error: string; blocked: boolean; panelRef: RefObject<HTMLDivElement | null>; successRef: RefObject<HTMLDivElement | null> }) {
   const failedStep = steps.find((step) => step.status === "error");
   const activeStep = steps.find((step) => step.status === "active");
   const completed = steps.every((step) => step.status === "completed");
-  return <section className={`import-progress-panel ${error ? "has-error" : completed ? "is-success" : ""}`} ref={panelRef} aria-live="polite"><div className="import-progress-heading"><div><p className="eyebrow">Importação do produto</p><h2>{error ? "A importação foi interrompida" : completed ? "Produto importado com sucesso" : "Importando produto..."}</h2><p>{error ? `Falha em: ${failedStep?.label || "etapa não identificada"}` : activeStep ? "A API está processando esta etapa." : "Todas as etapas foram confirmadas pela API."}</p></div><span className="import-progress-counter">{steps.filter((step) => step.status === "completed").length}/{steps.length}</span></div><div className="import-steps">{steps.map((step) => <div className={`import-step ${step.status}`} key={step.id}><span className="import-step-mark">{step.status === "completed" ? <Icon name="check" /> : step.status === "error" ? <Icon name="close" /> : step.status === "active" ? <span className="import-step-pulse" /> : <span />}</span><span className="import-step-label">{step.status === "active" ? <ShinyText text={step.label} speed={2} delay={0} color="#728589" shineColor="#ffffff" spread={120} direction="left" yoyo={false} pauseOnHover={false} disabled={false} /> : step.label.replace("...", "")}</span></div>)}</div>{completed && <div className="import-success" ref={successRef} role="status"><Icon name="check" /><strong>Produto importado com sucesso</strong></div>}{error && <p className="error-notice import-error" role="alert">{error} Os dados da prévia foram preservados; corrija a configuração e tente novamente.</p>}</section>;
+  return <section className={`import-progress-panel ${error ? "has-error" : completed ? "is-success" : ""}`} ref={panelRef} aria-live="polite"><div className="import-progress-heading"><div><p className="eyebrow">Importação do produto</p><h2>{error ? "A importação foi interrompida" : completed ? "Produto importado com sucesso" : "Importando produto..."}</h2><p>{error ? `Falha em: ${failedStep?.label || "etapa não identificada"}` : activeStep ? "A API está processando esta etapa." : "Todas as etapas foram confirmadas pela API."}</p></div><span className="import-progress-counter">{steps.filter((step) => step.status === "completed").length}/{steps.length}</span></div><div className="import-steps">{steps.map((step) => <div className={`import-step ${step.status}`} key={step.id}><span className="import-step-mark">{step.status === "completed" ? <Icon name="check" /> : step.status === "error" ? <Icon name="close" /> : step.status === "active" ? <span className="import-step-pulse" /> : <span />}</span><span className="import-step-label">{step.status === "active" ? <ShinyText text={step.label} speed={2} delay={0} color="#728589" shineColor="#ffffff" spread={120} direction="left" yoyo={false} pauseOnHover={false} disabled={false} /> : step.label.replace("...", "")}</span></div>)}</div>{completed && <div className="import-success" ref={successRef} role="status"><Icon name="check" /><strong>Produto importado com sucesso</strong></div>}{error && <p className="error-notice import-error" role="alert">{error} {blocked ? "A prévia foi preservada, mas a importação permanece bloqueada." : "Os dados da prévia foram preservados; corrija a configuração e tente novamente."}</p>}</section>;
 }
 
 function SpecialStatusSummary({ product }: { product: ProductPreview }) {
@@ -425,7 +517,7 @@ function formatStoreName(source?: string | null, urlStr?: string): string {
   return "Loja oficial";
 }
 
-function ReviewPreview({ product, approved, onApprove, previewRef, importing }: { product: ProductPreview; approved: boolean; onApprove: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean }) {
+function ReviewPreview({ product, approved, onApprove, previewRef, importing, blocked }: { product: ProductPreview; approved: boolean; onApprove: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; blocked: boolean }) {
   const money = (value: number | null | undefined) =>
     value === null || value === undefined
       ? "Não informado"
@@ -648,7 +740,7 @@ function ReviewPreview({ product, approved, onApprove, previewRef, importing }: 
         <button
           className="primary-button"
           onClick={onApprove}
-          disabled={approved || importing}
+          disabled={approved || importing || blocked}
         >
           <Icon name={importing ? "refresh" : "check"} />{" "}
           {importing ? "Importando produto..." : approved ? "Prévia aprovada" : "Aprovar prévia"}

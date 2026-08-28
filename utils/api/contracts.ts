@@ -40,6 +40,16 @@ export type ProductPreviewResponse = {
   status?: "ready";
 };
 
+export type ExistingCatalogProduct = {
+  id: string;
+  name: string | null;
+  brand?: string | null;
+  product_url?: string | null;
+  primary_image_url?: string | null;
+  main_image_url?: string | null;
+  created_at?: string | null;
+};
+
 export type EntityAssets = {
   logo?: string | null;
   symbol?: string | null;
@@ -83,6 +93,7 @@ export type CatalogProduct = {
   id: string;
   name: string;
   primary_image_url: string | null;
+  main_image_url?: string | null;
   image_url: string | null;
   brand: string | null;
   product_url: string;
