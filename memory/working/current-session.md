@@ -11,6 +11,7 @@ updated_at: 2026-08-24
 expires_at: null
 related:
   - working_api_base_url_runtime_error
+  - pricescout_gallery_audit
 ---
 
 # Sessão atual
@@ -22,3 +23,7 @@ Corrigir a falha de renderização do login quando a URL pública da API não es
 ## Estado
 
 Consulte `memory/working/api-base-url-runtime-error.md` para checklist, decisões, fontes e validações desta sessão.
+
+## Auditoria posterior
+
+A correção de contagem da galeria TerabyteShop está registrada em `memory/working/pricescout-gallery-audit.md`.

@@ -41,6 +41,8 @@ Se frontend e API estiverem em origens diferentes, a FastAPI deve configurar COR
 
 Produtos, lojas, preços, taxonomia e imagens são sempre lidos da API. URLs de imagens são contratos de resposta; componentes visuais não montam URLs de storage nem acessam provedores diretamente.
 
+Na prévia de produto, `images` é a fonte autoritativa da galeria e `main_image` só é usado como fallback quando a lista está vazia. Para TerabyteShop, a interface aceita somente URLs do CDN oficial no caminho `/produto/g/`; variantes de query, resolução, thumbnail e a repetição da capa são normalizadas antes da contagem e da renderização.
+
 A aprovação da prévia usa uma única operação de importação. Transações, deduplicação, armazenamento de arquivos e atualização do registro canônico são responsabilidades internas da API.
 
 ## Fontes da decisão

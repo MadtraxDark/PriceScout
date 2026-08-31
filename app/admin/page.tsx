@@ -517,6 +517,21 @@ function formatStoreName(source?: string | null, urlStr?: string): string {
   return "Loja oficial";
 }
 
+function canonicalGalleryImageKey(value: string): string {
+  try {
+    const url = new URL(value.trim());
+    url.search = "";
+    url.hash = "";
+    url.pathname = url.pathname
+      .replace(/\/produto\/(?:p|m|g|gg)\//i, "/produto/g/")
+      .replace(/\/(?:small|medium|large|xlarge)\//i, "/")
+      .replace(/(?:[-_](?:\d+x\d+|\d+w|\d+px))(?=\.[^.\/]+$)/i, "");
+    return `${url.hostname.toLowerCase()}${url.pathname.toLowerCase()}`;
+  } catch {
+    return value.trim().toLowerCase().split("?")[0].split("#")[0];
+  }
+}
+
 function ReviewPreview({ product, approved, onApprove, previewRef, importing, blocked }: { product: ProductPreview; approved: boolean; onApprove: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; blocked: boolean }) {
   const money = (value: number | null | undefined) =>
     value === null || value === undefined
@@ -531,15 +546,20 @@ function ReviewPreview({ product, approved, onApprove, previewRef, importing, bl
       if (!imgUrl || typeof imgUrl !== "string") return;
       const cleanUrl = imgUrl.trim();
       if (!cleanUrl) return;
-      const key = cleanUrl.split("?")[0].toLowerCase();
+      if (product.source.toLowerCase().includes("terabyte")) {
+        try {
+          const url = new URL(cleanUrl);
+          if (url.hostname.toLowerCase() !== "img.terabyteshop.com.br" || !/^\/produto\/g\//i.test(url.pathname)) return;
+        } catch {
+          return;
+        }
+      }
+      const key = canonicalGalleryImageKey(cleanUrl);
       if (!key || seen.has(key)) return;
       seen.add(key);
       list.push({ url: cleanUrl, alt: altText || product.name || "Imagem do produto" });
     };
 
-    if (product.main_image) {
-      addImg(product.main_image, product.name);
-    }
     if (Array.isArray(product.images)) {
       for (const img of product.images) {
         if (img && img.url) {
@@ -547,8 +567,11 @@ function ReviewPreview({ product, approved, onApprove, previewRef, importing, bl
         }
       }
     }
+    if (list.length === 0 && product.main_image) {
+      addImg(product.main_image, product.name);
+    }
     return list;
-  }, [product.images, product.main_image, product.name]);
+  }, [product.images, product.main_image, product.name, product.source]);
 
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
