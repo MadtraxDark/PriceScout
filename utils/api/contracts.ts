@@ -110,8 +110,18 @@ export type CatalogStore = {
   name: string;
   hostname: string;
   url: string;
+  country: string;
+  currency: string;
+  logo_svg?: string | null;
   productCount: number;
   updated_at: string;
+};
+
+export type StoreMarketOption = {
+  country: string;
+  country_name: string;
+  currency: string;
+  currency_name: string;
 };
 
 export type Product = {

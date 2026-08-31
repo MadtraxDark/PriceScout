@@ -2,6 +2,7 @@ import { api, apiUrl, hasApiConfiguration } from "@/utils/api/client";
 import type {
   CatalogProduct,
   CatalogStore,
+  StoreMarketOption,
   Product,
   ProductImage,
   ProductPreview,
@@ -131,6 +132,14 @@ export const catalogApi = {
 
   async previewProduct(url: string): Promise<ProductPreviewResponse> {
     return api.post<ProductPreviewResponse>("/api/v1/catalog/products/preview", { url });
+  },
+
+  async listStoreMarkets(): Promise<{ markets: StoreMarketOption[] }> {
+    return api.get<{ markets: StoreMarketOption[] }>("/api/v1/catalog/store-markets", { cache: "no-store" });
+  },
+
+  async updateStore(id: string, input: { name: string; url: string; country: string; currency: string; logo_svg?: string | null }): Promise<{ store: CatalogStore }> {
+    return api.patch<{ store: CatalogStore }>(`/api/v1/catalog/stores/${encodeURIComponent(id)}`, input);
   },
 
   async getPreview(previewId: string): Promise<ProductPreviewResponse> {
