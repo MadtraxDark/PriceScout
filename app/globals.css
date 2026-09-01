@@ -317,6 +317,18 @@
 .lightbox-stage img { max-width:calc(100% - var(--lightbox-stage-inset)); max-height:calc(100% - var(--lightbox-stage-inset)); object-fit:contain; }
 @media (max-width:900px) { .product-admin-grid { grid-template-columns:1fr; } .product-admin-side { grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; } .product-admin-side .admin-section:last-child { grid-column:1 / -1; } }
 @media (max-width:680px) { .product-admin-shell { width:min(100% - 28px,600px); padding-top:24px; } .product-admin-header { align-items:flex-start; flex-direction:column; gap:18px; } .product-admin-actions { justify-content:flex-start; } .product-admin-side { grid-template-columns:1fr; } .product-admin-side .admin-section:last-child { grid-column:auto; } .admin-section { padding:18px; } .product-fields,.product-gallery,.image-add-form { grid-template-columns:1fr; } .managed-image-preview { height:210px; } }
+.other-store-price-panel { margin:22px 0 28px; padding:24px; border:1px solid var(--line); border-radius:12px; background:var(--paper); }
+.other-store-price-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.other-store-price-heading h2 { margin:0; font-size:18px; letter-spacing:-.035em; }
+.other-store-price-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top:18px; }
+.other-store-price-list article { padding:16px; border:1px solid var(--line); border-radius:8px; background:#fbfcfa; }
+.other-store-price-list article > strong,.other-store-price-list article > span { display:block; }
+.other-store-price-list article > span { margin-top:4px; color:var(--muted); font:10px var(--mono); }
+.other-store-price-list dl { display:grid; gap:10px; margin:16px 0 0; }
+.other-store-price-list dl div { display:flex; justify-content:space-between; gap:12px; }
+.other-store-price-list dt { color:var(--muted); font-size:10px; }
+.other-store-price-list dd { margin:0; font-size:12px; font-weight:700; }
+@media (max-width:680px) { .other-store-price-panel { padding:18px; } .other-store-price-heading .outline-button { width:100%; } }
 
 /* Product media manager: fixed card geometry, isolated media and action zones. */
 .product-gallery { grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; align-items:stretch; }

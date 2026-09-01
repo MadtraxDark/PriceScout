@@ -7,6 +7,7 @@ import type {
   ProductImage,
   ProductPreview,
   ProductPreviewResponse,
+  OtherStorePricesResponse,
   TaxonomyItem,
 } from "@/utils/api/contracts";
 
@@ -192,6 +193,14 @@ export const catalogApi = {
       image_ids: imageIds,
       primary_image_id: primaryImageId,
     });
+  },
+
+  async searchOtherStorePrices(id: string): Promise<OtherStorePricesResponse> {
+    return api.post<OtherStorePricesResponse>(
+      `/api/v1/catalog/products/${encodeURIComponent(id)}/other-store-prices`,
+      undefined,
+      { cache: "no-store" },
+    );
   },
 
   async deleteProductImage(id: string, imageId: string): Promise<void> {

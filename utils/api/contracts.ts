@@ -149,6 +149,20 @@ export type Product = {
   store?: { name: string; hostname: string } | null;
 };
 
+export type OtherStorePrice = {
+  store: string;
+  currency: string;
+  originalPrice: number | null;
+  pixPrice: number | null;
+  cardPrice: number | null;
+};
+
+export type OtherStorePricesResponse = {
+  success: boolean;
+  prices: OtherStorePrice[];
+  error?: string | null;
+};
+
 export type ProductImage = {
   id: string;
   name: string;
