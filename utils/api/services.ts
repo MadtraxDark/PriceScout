@@ -7,6 +7,7 @@ import type {
   ProductImage,
   ProductPreview,
   ProductPreviewResponse,
+  OtherStorePrice,
   OtherStorePricesResponse,
   TaxonomyItem,
 } from "@/utils/api/contracts";
@@ -196,11 +197,12 @@ export const catalogApi = {
   },
 
   async searchOtherStorePrices(id: string): Promise<OtherStorePricesResponse> {
-    return api.post<OtherStorePricesResponse>(
+    const payload = await api.post<unknown>(
       `/api/v1/catalog/products/${encodeURIComponent(id)}/other-store-prices`,
       undefined,
       { cache: "no-store" },
     );
+    return normalizeOtherStorePricesResponse(payload);
   },
 
   async deleteProductImage(id: string, imageId: string): Promise<void> {
@@ -211,3 +213,46 @@ export const catalogApi = {
     return api.delete<{ success: boolean; product_id: string; images_removed: number; message: string }>(`/api/v1/catalog/products/${encodeURIComponent(id)}`);
   },
 };
+
+function normalizeOtherStorePricesResponse(payload: unknown): OtherStorePricesResponse {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("A API retornou uma resposta inválida para a busca de preços.");
+  }
+
+  const body = payload as Record<string, unknown>;
+  if (!Array.isArray(body.prices)) {
+    throw new Error("A API não retornou o campo prices na busca de preços.");
+  }
+  const rawPrices = body.prices;
+  const prices = rawPrices.flatMap((entry): OtherStorePrice[] => {
+    if (!entry || typeof entry !== "object") return [];
+    const item = entry as Record<string, unknown>;
+    const store = firstString(item.store, item.store_name);
+    const currency = firstString(item.currency) ?? "BRL";
+    if (!store) return [];
+    return [{
+      store,
+      url: firstString(item.url) ?? "",
+      currency,
+      originalPrice: firstNumber(item.originalPrice, item.original_price),
+      pixPrice: firstNumber(item.pixPrice, item.pix_price),
+      cardPrice: firstNumber(item.cardPrice, item.card_price),
+    }];
+  });
+
+  return {
+    success: body.success !== false,
+    prices,
+    error: typeof body.error === "string" ? body.error : null,
+  };
+}
+
+function firstString(...values: unknown[]): string | null {
+  const value = values.find((candidate) => typeof candidate === "string" && candidate.trim());
+  return typeof value === "string" ? value : null;
+}
+
+function firstNumber(...values: unknown[]): number | null {
+  const value = values.find((candidate) => typeof candidate === "number" && Number.isFinite(candidate));
+  return typeof value === "number" ? value : null;
+}

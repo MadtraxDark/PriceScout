@@ -151,6 +151,7 @@ export type Product = {
 
 export type OtherStorePrice = {
   store: string;
+  url: string;
   currency: string;
   originalPrice: number | null;
   pixPrice: number | null;

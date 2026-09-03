@@ -27,6 +27,8 @@ A interface fica disponível em `http://localhost:3000`. A API precisa permitir 
 - `utils/api/services.ts`: operações por domínio consumidas pelas telas.
 - `utils/api/contracts.ts`: contratos TypeScript das respostas e payloads.
 
+`catalogApi.searchOtherStorePrices` consome `POST /api/v1/catalog/products/{id}/other-store-prices` e preserva todas as ofertas válidas retornadas em `prices`. A camada aceita apenas aliases equivalentes de serialização (`originalPrice`/`original_price`, `pixPrice`/`pix_price` e `cardPrice`/`card_price`); ela não transforma uma resposta vazia em sucesso nem descarta uma resposta válida por causa de campos comerciais opcionais. O estado vazio exibido pela página significa que a API realmente retornou `prices: []`.
+
 Componentes e páginas não devem chamar `fetch` diretamente nem conhecer banco, storage ou provedores externos. Imagens devem usar URLs retornadas pela API.
 
 ## Contrato esperado da FastAPI
@@ -40,6 +42,7 @@ Componentes e páginas não devem chamar `fetch` diretamente nem conhecer banco,
 - `POST /catalog/products/import`
 - `GET|PATCH /catalog/products/{id}`
 - `POST|PATCH|DELETE /catalog/products/{id}/images`
+- `POST /catalog/products/{id}/other-store-prices`
 
 O endpoint de importação recebe a prévia aprovada e executa toda a operação no servidor de forma consistente. O frontend não coordena persistência, taxonomia ou arquivos separadamente.
 
