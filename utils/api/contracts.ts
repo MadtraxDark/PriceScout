@@ -91,18 +91,89 @@ export type EntityAssetsPayload = EntityAssets | BrandAssetsResponse | Record<st
 
 export type CatalogProduct = {
   id: string;
-  name: string;
-  primary_image_url: string | null;
-  main_image_url?: string | null;
-  image_url: string | null;
+  canonical_name: string;
   brand: string | null;
-  product_url: string;
-  source: string;
-  external_product_id: string;
-  availability: string;
-  pix_price: number | null;
+  model: string | null;
+  category: string | null;
+  identity_attributes: Record<string, unknown>;
+  identity_status: "confirmed" | "ambiguous";
+  variants: CatalogProductVariant[];
+  images: CatalogProductImage[];
+  created_at: string;
   updated_at: string;
-  store?: { name: string; hostname: string } | null;
+  name: string; product_url: string; source: string; external_product_id: string; image_url?: string | null; primary_image_url?: string | null; main_image_url?: string | null;
+  stock_quantity?: number | null; seller?: string | null; special_status?: string | null; shipping_from?: string | null; original_price?: number | null; pix_price?: number | null; pix_discount_percent?: number | null; card_price?: number | null; installments_quantity?: number | null; installment_amount?: number | null; price_difference_pix_to_card?: number | null; primary_image_id?: string | null; store?: { name: string; hostname: string } | null;
+};
+
+export type OfferPriceHistory = {
+  id: number;
+  catalog_offer_id: string;
+  original_price: number | null;
+  pix_price: number | null;
+  card_price: number | null;
+  installments: number | null;
+  installment_value: number | null;
+  interest_free: boolean | null;
+  availability: string;
+  currency: string;
+  country: string;
+  market: string;
+  captured_at: string;
+};
+
+export type CatalogOffer = {
+  id: string;
+  catalog_product_variant_id: string;
+  store_id: string;
+  source: string;
+  external_product_id: string | null;
+  canonical_url: string;
+  seller: string | null;
+  delivery_responsible: string | null;
+  availability: string;
+  original_price: number | null;
+  pix_price: number | null;
+  card_price: number | null;
+  discount_percent: number | null;
+  installments: number | null;
+  installment_value: number | null;
+  interest_free: boolean | null;
+  image_url: string | null;
+  currency: string;
+  country: string;
+  market: string;
+  store?: { id: string; name: string; hostname: string } | null;
+  history: OfferPriceHistory[];
+};
+
+export type CatalogProductVariant = {
+  id: string;
+  catalog_product_id: string;
+  attributes: Record<string, string>;
+  variant_fingerprint: string;
+  identity_status: "confirmed" | "ambiguous";
+  offers: CatalogOffer[];
+};
+
+export type CatalogProductImage = {
+  image_id: string;
+  original_url: string;
+  optimized_image_url?: string | null;
+  position: number;
+  is_main: boolean;
+  status: string;
+  drive_original_id?: string | null;
+  drive_avif_id?: string | null;
+  error?: string | null;
+};
+
+export type CatalogOverview = {
+  summary: { products: number; variants: number; offers: number; stores: number };
+  recent_products: Array<{ id: string; name: string; brand: string | null; created_at: string; image_url: string | null; variants: number; offers: number }>;
+  single_offer_variants: Array<{ product_id: string; variant_id: string; product_name: string; variant_label: string | null; store_name: string | null }>;
+  best_price_opportunities: Array<{ product_id: string; variant_id: string; product_name: string; variant_label: string | null; lowest_price: number; highest_price: number; savings: number; currency: string; offers: Array<{ store_name: string | null; price: number; url: string | null }> }>;
+  alerts: Array<{ kind: string; label: string; count: number; product_ids: string[] }>;
+  recent_activity: Array<{ kind: string; label: string; product_id: string | null; product_name: string | null; occurred_at: string }>;
 };
 
 export type CatalogStore = {
@@ -124,50 +195,30 @@ export type StoreMarketOption = {
   currency_name: string;
 };
 
-export type Product = {
-  id: string;
-  name: string;
-  created_at?: string | null;
-  brand: string | null;
-  product_url: string;
-  source: string;
-  external_product_id: string;
-  availability: string;
-  stock_quantity: number | null;
-  seller: string | null;
-  special_status: string | null;
-  shipping_from: string | null;
-  original_price: number | null;
-  pix_price: number | null;
-  pix_discount_percent: number | null;
-  card_price: number | null;
-  installments_quantity: number | null;
-  installment_amount: number | null;
-  price_difference_pix_to_card: number | null;
-  primary_image_id: string | null;
-  primary_image_url: string | null;
-  store?: { name: string; hostname: string } | null;
-};
-
-export type OtherStorePrice = {
-  store: string;
-  url: string;
-  currency: string;
-  originalPrice: number | null;
-  pixPrice: number | null;
-  cardPrice: number | null;
-};
+export type Product = CatalogProduct;
 
 export type OtherStorePricesResponse = {
-  success: boolean;
-  prices: OtherStorePrice[];
-  error?: string | null;
+  variant?: CatalogProductVariant; prices?: OtherStorePrice[]; diagnostics: Array<Record<string, unknown>>;
 };
+
+export type OtherStoreProgressEvent = {
+  type: "store_progress" | "search_progress" | "search_result";
+  store?: string | null;
+  display_name?: string | null;
+  stage: string;
+  status: "pending" | "running" | "success" | "warning" | "error" | "no_result";
+  message: string;
+  candidate_count?: number;
+  result?: OtherStorePricesResponse;
+};
+
+export type OtherStorePrice = { storeId: string; displayName: string; url: string; currency: string; originalPrice: number | null; pixDiscountPercent: number | null; pixPrice: number | null; cardPrice: number | null; installments: { quantity: number; amount: number; total: number; interestFree: boolean | null } | null; availability: string | null; seller: string | null; deliveryResponsible: string | null; };
 
 export type ProductImage = {
   id: string;
   name: string;
   image_url: string;
+  original_url?: string;
   sort_order: number;
   is_main?: boolean;
 };

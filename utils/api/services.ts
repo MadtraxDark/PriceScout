@@ -1,15 +1,16 @@
 import { api, apiUrl, hasApiConfiguration } from "@/utils/api/client";
 import type {
   CatalogProduct,
+  CatalogProductImage,
   CatalogStore,
+  CatalogOverview,
   StoreMarketOption,
   Product,
   ProductImage,
   ProductPreview,
   ProductPreviewResponse,
-  OtherStorePrice,
   OtherStorePricesResponse,
-  TaxonomyItem,
+  OtherStoreProgressEvent,
 } from "@/utils/api/contracts";
 
 export interface AuthUserResponse {
@@ -56,6 +57,17 @@ export const authApi = {
         : "/admin";
     const callbackTarget = `${origin}/auth/callback?next=${encodeURIComponent(safePath)}`;
     return apiUrl("/api/v1/auth/google/login", { redirect_frontend_url: callbackTarget });
+  },
+
+  async startGoogleLogin(nextPath: string): Promise<string> {
+    if (!hasApiConfiguration()) throw new Error("Conexao com a API nao configurada.");
+    const safePath = nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/admin";
+    const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+    const callbackTarget = `${origin}/auth/callback?next=${encodeURIComponent(safePath)}`;
+    const result = await api.get<{ url: string }>("/api/v1/auth/google/login", {
+      query: { redirect_frontend_url: callbackTarget, format: "json" },
+    });
+    return result.url;
   },
 
   async me(): Promise<AuthUserResponse> {
@@ -118,8 +130,11 @@ export const authApi = {
     }
   },
 };
-
 export const catalogApi = {
+  async getOverview(): Promise<CatalogOverview> {
+    return api.get<CatalogOverview>("/api/v1/catalog/overview", { cache: "no-store" });
+  },
+
   async listProducts(): Promise<{ products: CatalogProduct[] }> {
     return api.get<{ products: CatalogProduct[] }>("/api/v1/catalog/products", { cache: "no-store" });
   },
@@ -156,25 +171,11 @@ export const catalogApi = {
     return api.post<{ product: CatalogProduct; message?: string }>("/api/v1/catalog/products/import", previewId ? { preview_id: previewId } : { product });
   },
 
-  async getProduct(id: string): Promise<{ product: Product; images: ProductImage[]; taxonomy: TaxonomyItem[] }> {
-    return api.get<{ product: Product; images: ProductImage[]; taxonomy: TaxonomyItem[] }>(
+  async getProduct(id: string): Promise<Product> {
+    return api.get<Product>(
       `/api/v1/catalog/products/${encodeURIComponent(id)}`,
       { cache: "no-store" }
     );
-  },
-
-  async getProductPrices(id: string, includeHistory = false): Promise<unknown> {
-    return api.get(`/api/v1/catalog/products/${encodeURIComponent(id)}/prices`, {
-      query: { include_history: includeHistory },
-      cache: "no-store",
-    });
-  },
-
-  async getProductPricesByGtin(gtin: string, includeHistory = false): Promise<unknown> {
-    return api.get(`/api/v1/catalog/gtin/${encodeURIComponent(gtin)}/prices`, {
-      query: { include_history: includeHistory },
-      cache: "no-store",
-    });
   },
 
   async updateProduct(id: string, input: Record<string, unknown>): Promise<{ product: Product }> {
@@ -188,7 +189,7 @@ export const catalogApi = {
   async updateProductImages(id: string, imageIds: string[], primaryImageId: string): Promise<{
     product_id: string;
     primary_image_id: string;
-    images: ProductImage[];
+    images: CatalogProductImage[];
   }> {
     return api.patch(`/api/v1/catalog/products/${encodeURIComponent(id)}/images`, {
       image_ids: imageIds,
@@ -196,15 +197,43 @@ export const catalogApi = {
     });
   },
 
-  async searchOtherStorePrices(id: string): Promise<OtherStorePricesResponse> {
-    const payload = await api.post<unknown>(
-      `/api/v1/catalog/products/${encodeURIComponent(id)}/other-store-prices`,
+  async searchOtherStorePrices(productId: string): Promise<OtherStorePricesResponse> {
+    const current = await this.getProduct(productId);
+    const variantId = current.variants[0]?.id;
+    if (!variantId) throw new Error("O produto não possui variação comercial.");
+    const result = await api.post<OtherStorePricesResponse>(
+      `/api/v1/catalog/variants/${encodeURIComponent(variantId)}/other-store-prices`,
       undefined,
       { cache: "no-store" },
     );
-    return normalizeOtherStorePricesResponse(payload);
+    return { ...result, prices: (result.variant?.offers ?? []).map((offer) => ({ storeId: offer.store_id, displayName: offer.store?.name ?? offer.source, url: offer.canonical_url, currency: offer.currency, originalPrice: offer.original_price, pixDiscountPercent: offer.discount_percent, pixPrice: offer.pix_price, cardPrice: offer.card_price, installments: offer.installments == null || offer.installment_value == null ? null : { quantity: offer.installments, amount: offer.installment_value, total: offer.installments * offer.installment_value, interestFree: offer.interest_free }, availability: offer.availability, seller: offer.seller, deliveryResponsible: offer.delivery_responsible })) };
   },
-
+  async streamOtherStorePrices(productId: string, onEvent: (event: OtherStoreProgressEvent) => void, signal?: AbortSignal): Promise<OtherStorePricesResponse> {
+    const current = await this.getProduct(productId);
+    const variantId = current.variants[0]?.id;
+    if (!variantId) throw new Error("O produto nao possui variacao comercial.");
+    const response = await fetch(apiUrl(`/api/v1/catalog/variants/${encodeURIComponent(variantId)}/other-store-prices/stream`, { timeout_per_store: 25 }), { credentials: "include", headers: { Accept: "text/event-stream" }, signal });
+    if (!response.ok || !response.body) throw new Error(`A API respondeu com status ${response.status}.`);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finalResult: OtherStorePricesResponse | null = null;
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+        const frames = buffer.split("\n\n"); buffer = frames.pop() ?? "";
+        for (const frame of frames) { const data = frame.split("\n").find((line) => line.startsWith("data: "))?.slice(6); if (data) { const event = JSON.parse(data) as OtherStoreProgressEvent; onEvent(event); if (event.result) finalResult = event.result; } }
+      }
+    } finally { reader.releaseLock(); }
+    const data = buffer.split("\n").find((line) => line.startsWith("data: "))?.slice(6);
+    if (data) { const event = JSON.parse(data) as OtherStoreProgressEvent; onEvent(event); if (event.result) finalResult = event.result; }
+    if (finalResult) return { ...finalResult, prices: finalResult.prices ?? (finalResult.variant?.offers ?? []).map((offer) => ({ storeId: offer.store_id, displayName: offer.store?.name ?? offer.source, url: offer.canonical_url, currency: offer.currency, originalPrice: offer.original_price, pixDiscountPercent: offer.discount_percent, pixPrice: offer.pix_price, cardPrice: offer.card_price, installments: offer.installments == null || offer.installment_value == null ? null : { quantity: offer.installments, amount: offer.installment_value, total: offer.installments * offer.installment_value, interestFree: offer.interest_free }, availability: offer.availability, seller: offer.seller, deliveryResponsible: offer.delivery_responsible })) };
+    if (!data) throw new Error("A busca foi encerrada sem resultado final.");
+    const event = JSON.parse(data) as OtherStoreProgressEvent;
+    throw new Error(event.message || "Nao foi possivel concluir a busca.");
+  },
   async deleteProductImage(id: string, imageId: string): Promise<void> {
     return api.delete<void>(`/api/v1/catalog/products/${encodeURIComponent(id)}/images`, { query: { imageId } });
   },
@@ -213,46 +242,3 @@ export const catalogApi = {
     return api.delete<{ success: boolean; product_id: string; images_removed: number; message: string }>(`/api/v1/catalog/products/${encodeURIComponent(id)}`);
   },
 };
-
-function normalizeOtherStorePricesResponse(payload: unknown): OtherStorePricesResponse {
-  if (!payload || typeof payload !== "object") {
-    throw new Error("A API retornou uma resposta inválida para a busca de preços.");
-  }
-
-  const body = payload as Record<string, unknown>;
-  if (!Array.isArray(body.prices)) {
-    throw new Error("A API não retornou o campo prices na busca de preços.");
-  }
-  const rawPrices = body.prices;
-  const prices = rawPrices.flatMap((entry): OtherStorePrice[] => {
-    if (!entry || typeof entry !== "object") return [];
-    const item = entry as Record<string, unknown>;
-    const store = firstString(item.store, item.store_name);
-    const currency = firstString(item.currency) ?? "BRL";
-    if (!store) return [];
-    return [{
-      store,
-      url: firstString(item.url) ?? "",
-      currency,
-      originalPrice: firstNumber(item.originalPrice, item.original_price),
-      pixPrice: firstNumber(item.pixPrice, item.pix_price),
-      cardPrice: firstNumber(item.cardPrice, item.card_price),
-    }];
-  });
-
-  return {
-    success: body.success !== false,
-    prices,
-    error: typeof body.error === "string" ? body.error : null,
-  };
-}
-
-function firstString(...values: unknown[]): string | null {
-  const value = values.find((candidate) => typeof candidate === "string" && candidate.trim());
-  return typeof value === "string" ? value : null;
-}
-
-function firstNumber(...values: unknown[]): number | null {
-  const value = values.find((candidate) => typeof candidate === "number" && Number.isFinite(candidate));
-  return typeof value === "number" ? value : null;
-}

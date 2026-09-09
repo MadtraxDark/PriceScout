@@ -1,7 +1,8 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState, Suspense } from "react";
+import { ApiError, ApiUnavailableError } from "@/utils/api/client";
 import { authApi } from "@/utils/api/services";
 
 function ScoutMark() {
@@ -16,6 +17,7 @@ function ScoutMark() {
 
 function LoginForm() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const authStatus = searchParams.get("auth");
   const rawNext = searchParams.get("next");
   const nextPath =
@@ -26,28 +28,45 @@ function LoginForm() {
       : "/admin";
 
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [sessionMessage, setSessionMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void authApi.me().then(() => {
+      if (active) router.replace(nextPath);
+    }).catch((error: unknown) => {
+      if (!active) return;
+      setCheckingSession(false);
+      if (error instanceof ApiUnavailableError || (error instanceof ApiError && error.status >= 500)) {
+        setSessionMessage(error.message);
+      }
+    });
+    return () => { active = false; };
+  }, [nextPath, router]);
 
   const signInUrl = authApi.signInUrl(nextPath);
 
-  function handleGoogleLogin(e: React.MouseEvent) {
+  async function handleGoogleLogin(e: React.MouseEvent) {
     e.preventDefault();
     if (loading || !signInUrl) return;
-
-    // Limpa qualquer estado ou token residual de sessoes anteriores no perfil normal
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-        sessionStorage.removeItem("access_token");
-        sessionStorage.removeItem("refresh_token");
-      } catch (err) {
-        console.warn("Nao foi possivel limpar storage:", err);
+    setLoading(true);
+    setSessionMessage(null);
+    try {
+      const providerUrl = await authApi.startGoogleLogin(nextPath);
+      window.location.href = providerUrl;
+    } catch (error: unknown) {
+      setLoading(false);
+      if (error instanceof ApiUnavailableError || (error instanceof ApiError && error.status >= 500)) {
+        setSessionMessage(error.message);
+      } else {
+        setSessionMessage(error instanceof Error ? error.message : "Nao foi possivel iniciar a autenticacao.");
       }
     }
+  }
 
-    setLoading(true);
-    // Navegacao direta via window.location para garantir full-page navigation
-    window.location.href = signInUrl;
+  if (checkingSession) {
+    return <main className="login-shell"><section className="form-panel"><div className="form-wrap"><p className="overline">Autenticacao</p><h2>Verificando sessao...</h2><p>Estamos confirmando se voce ja esta autenticado.</p></div></section></main>;
   }
 
   const googleButtonContent = (
@@ -123,6 +142,10 @@ function LoginForm() {
                 Defina <code>NEXT_PUBLIC_API_BASE_URL</code> em <code>.env.local</code> e reinicie o servidor.
               </span>
             </p>
+          )}
+
+          {sessionMessage && (
+            <p className="auth-message" role="alert">{sessionMessage}</p>
           )}
 
           <p className="auth-copy login-security-note">

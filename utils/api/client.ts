@@ -11,6 +11,13 @@ export class ApiError extends Error {
   }
 }
 
+export class ApiUnavailableError extends Error {
+  constructor(message = "A API esta indisponivel no momento. Tente novamente em instantes.", public readonly timeout = false) {
+    super(message);
+    this.name = "ApiUnavailableError";
+  }
+}
+
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
   query?: Record<string, string | number | boolean | null | undefined>;
@@ -66,21 +73,42 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     requestHeaders.set("Accept", "application/json");
   }
 
-  const response = await fetch(apiUrl(path, query), {
-    ...requestInit,
-    headers: requestHeaders,
-    credentials: "include",
-    body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(path, query), {
+      ...requestInit,
+      headers: requestHeaders,
+      credentials: "include",
+      body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new ApiUnavailableError(
+      error instanceof Error && /timeout|timed out/i.test(error.message)
+        ? "A API demorou demais para responder. Tente novamente."
+        : undefined,
+      error instanceof Error && /timeout|timed out/i.test(error.message),
+    );
+  }
   const payload = await parseResponse(response);
 
   if (!response.ok && response.status === 401 && !path.includes("/auth/refresh") && !path.includes("/auth/login")) {
-    const refreshResponse = await fetch(apiUrl("/api/v1/auth/refresh"), {
-      method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
-      credentials: "include",
-      body: "{}",
-    });
+    let refreshResponse: Response;
+    try {
+      refreshResponse = await fetch(apiUrl("/api/v1/auth/refresh"), {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        credentials: "include",
+        body: "{}",
+      });
+    } catch (error) {
+      throw new ApiUnavailableError(
+        error instanceof Error && /timeout|timed out/i.test(error.message)
+          ? "A API demorou demais para responder. Tente novamente."
+          : undefined,
+        error instanceof Error && /timeout|timed out/i.test(error.message),
+      );
+    }
     if (refreshResponse.ok) {
       const retry = await fetch(apiUrl(path, query), {
         ...requestInit,
@@ -96,7 +124,13 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
           : `A API respondeu com status ${retry.status}.`;
         throw new ApiError(retryMessage, retry.status, retryPayload);
       }
+    } else if (refreshResponse.status >= 500) {
+      throw new ApiUnavailableError();
     }
+  }
+
+  if (response.status >= 500) {
+    throw new ApiUnavailableError();
   }
 
   if (!response.ok) {
