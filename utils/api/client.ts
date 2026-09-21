@@ -1,9 +1,18 @@
+import { clearAccessToken, getAccessToken, setAccessToken } from "./auth-token";
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, "") ?? "";
+
+// ---------------------------------------------------------------------------
+// Erros públicos
+// ---------------------------------------------------------------------------
 
 export class ApiError extends Error {
   constructor(
     message: string,
     public readonly status: number,
+    public readonly code: string = "UNKNOWN",
+    public readonly retryable: boolean = false,
+    public readonly retry_after: number | null = null,
     public readonly details?: unknown,
   ) {
     super(message);
@@ -11,12 +20,23 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Erros de rede (sem resposta) e 5xx.
+ * NÃO usar para 401 / 403 / 404 / 409 / 422 / 429.
+ */
 export class ApiUnavailableError extends Error {
-  constructor(message = "A API esta indisponivel no momento. Tente novamente em instantes.", public readonly timeout = false) {
+  constructor(
+    message = "A API esta indisponivel no momento. Tente novamente em instantes.",
+    public readonly timeout = false,
+  ) {
     super(message);
     this.name = "ApiUnavailableError";
   }
 }
+
+// ---------------------------------------------------------------------------
+// Utilitários de URL
+// ---------------------------------------------------------------------------
 
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
@@ -25,7 +45,6 @@ type RequestOptions = Omit<RequestInit, "body"> & {
 
 export function hasApiConfiguration(): boolean {
   if (!API_BASE_URL) return false;
-
   try {
     const url = new URL(API_BASE_URL);
     return url.protocol === "http:" || url.protocol === "https:";
@@ -35,25 +54,23 @@ export function hasApiConfiguration(): boolean {
 }
 
 function requireApiBaseUrl(): string {
-  if (!API_BASE_URL) {
-    throw new Error("NEXT_PUBLIC_API_BASE_URL nao esta configurada.");
-  }
-  if (!hasApiConfiguration()) {
-    throw new Error("NEXT_PUBLIC_API_BASE_URL deve conter uma URL HTTP ou HTTPS valida.");
-  }
+  if (!API_BASE_URL) throw new Error("NEXT_PUBLIC_API_BASE_URL nao esta configurada.");
+  if (!hasApiConfiguration()) throw new Error("NEXT_PUBLIC_API_BASE_URL deve conter uma URL HTTP ou HTTPS valida.");
   return API_BASE_URL;
 }
 
 export function apiUrl(path: string, query?: RequestOptions["query"]): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const url = new URL(`${requireApiBaseUrl()}${normalizedPath}`);
-
   for (const [key, value] of Object.entries(query ?? {})) {
     if (value !== null && value !== undefined) url.searchParams.set(key, String(value));
   }
-
   return url.toString();
 }
+
+// ---------------------------------------------------------------------------
+// Parse de resposta
+// ---------------------------------------------------------------------------
 
 async function parseResponse(response: Response): Promise<unknown> {
   if (response.status === 204) return undefined;
@@ -61,100 +78,180 @@ async function parseResponse(response: Response): Promise<unknown> {
   return contentType.includes("application/json") ? response.json() : response.text();
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { body, headers, query, ...requestInit } = options;
-  const requestHeaders = new Headers(headers);
-  const isFormData = body instanceof FormData;
+/**
+ * Constrói ApiError a partir do payload de erro do ScoutApiV2.
+ * Formato canônico: { detail: { code, message, retryable, ... } }
+ */
+function buildApiError(payload: unknown, status: number, retryAfterHeader?: string | null): ApiError {
+  const detail =
+    payload && typeof payload === "object" && "detail" in payload
+      ? (payload as { detail: unknown }).detail
+      : null;
 
-  if (body !== undefined && !isFormData && !requestHeaders.has("Content-Type")) {
-    requestHeaders.set("Content-Type", "application/json");
-  }
-  if (!requestHeaders.has("Accept")) {
-    requestHeaders.set("Accept", "application/json");
+  let code = "UNKNOWN";
+  let message = `A API respondeu com status ${status}.`;
+  let retryable = false;
+  let retry_after: number | null = null;
+  let details: unknown = payload;
+
+  if (detail && typeof detail === "object") {
+    const d = detail as Record<string, unknown>;
+    if (typeof d.code === "string") code = d.code;
+    if (typeof d.message === "string") message = d.message;
+    if (typeof d.retryable === "boolean") retryable = d.retryable;
+    if (typeof d.retry_after === "number") retry_after = d.retry_after;
+    details = detail;
+  } else if (typeof detail === "string") {
+    message = detail;
   }
 
-  let response: Response;
-  try {
-    response = await fetch(apiUrl(path, query), {
-      ...requestInit,
-      headers: requestHeaders,
-      credentials: "include",
-      body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
-    });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") throw error;
-    throw new ApiUnavailableError(
-      error instanceof Error && /timeout|timed out/i.test(error.message)
-        ? "A API demorou demais para responder. Tente novamente."
-        : undefined,
-      error instanceof Error && /timeout|timed out/i.test(error.message),
-    );
+  if (retryAfterHeader) {
+    const parsed = parseInt(retryAfterHeader, 10);
+    if (Number.isFinite(parsed)) retry_after = parsed;
   }
-  const payload = await parseResponse(response);
 
-  if (!response.ok && response.status === 401 && !path.includes("/auth/refresh") && !path.includes("/auth/login")) {
-    let refreshResponse: Response;
+  const isRateLimited = status === 429;
+
+  return new ApiError(message, status, code, retryable || isRateLimited, retry_after, details);
+}
+
+// ---------------------------------------------------------------------------
+// Refresh single-flight
+// Garante que apenas uma requisição de refresh ocorra por vez; demais
+// aguardam o resultado do mesmo Promise.
+// ---------------------------------------------------------------------------
+
+let _refreshPromise: Promise<boolean> | null = null;
+
+async function singleFlightRefresh(): Promise<boolean> {
+  if (_refreshPromise !== null) {
+    return _refreshPromise;
+  }
+
+  const promise = (async (): Promise<boolean> => {
     try {
-      refreshResponse = await fetch(apiUrl("/api/v1/auth/refresh"), {
+      const response = await fetch(apiUrl("/auth/refresh"), {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json" },
         credentials: "include",
-        body: "{}",
       });
-    } catch (error) {
-      throw new ApiUnavailableError(
-        error instanceof Error && /timeout|timed out/i.test(error.message)
-          ? "A API demorou demais para responder. Tente novamente."
-          : undefined,
-        error instanceof Error && /timeout|timed out/i.test(error.message),
-      );
+      if (!response.ok) {
+        clearAccessToken();
+        return false;
+      }
+      const payload = await response.json() as unknown;
+      const token =
+        payload && typeof payload === "object" && "access_token" in payload
+          ? String((payload as { access_token: unknown }).access_token)
+          : null;
+      if (token) {
+        setAccessToken(token);
+        return true;
+      }
+      clearAccessToken();
+      return false;
+    } catch {
+      clearAccessToken();
+      return false;
     }
-    if (refreshResponse.ok) {
-      const retry = await fetch(apiUrl(path, query), {
+  })();
+
+  _refreshPromise = promise;
+  try {
+    return await promise;
+  } finally {
+    _refreshPromise = null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Headers da requisição
+// ---------------------------------------------------------------------------
+
+function buildRequestHeaders(base?: HeadersInit, body?: unknown, isFormData?: boolean): Headers {
+  const headers = new Headers(base);
+  const token = getAccessToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (body !== undefined && !isFormData && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  return headers;
+}
+
+// ---------------------------------------------------------------------------
+// Função principal de request
+// ---------------------------------------------------------------------------
+
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { body, headers, query, ...requestInit } = options;
+  const isFormData = body instanceof FormData;
+  // Evita loop infinito de refresh em endpoints de auth
+  const isAuthEndpoint =
+    path.includes("/auth/refresh") ||
+    path.includes("/auth/logout") ||
+    path.includes("/auth/google");
+
+  async function attempt(isRetry: boolean): Promise<T> {
+    const requestHeaders = buildRequestHeaders(headers, body, isFormData);
+    let response: Response;
+
+    try {
+      response = await fetch(apiUrl(path, query), {
         ...requestInit,
         headers: requestHeaders,
         credentials: "include",
         body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
       });
-      const retryPayload = await parseResponse(retry);
-      if (retry.ok) return retryPayload as T;
-      if (retry.status !== 401) {
-        const retryMessage = retryPayload && typeof retryPayload === "object" && "detail" in retryPayload
-          ? String((retryPayload as { detail: unknown }).detail)
-          : `A API respondeu com status ${retry.status}.`;
-        throw new ApiError(retryMessage, retry.status, retryPayload);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") throw error;
+      const isTimeout = error instanceof Error && /timeout|timed out/i.test(error.message);
+      throw new ApiUnavailableError(
+        isTimeout ? "A API demorou demais para responder. Tente novamente." : undefined,
+        isTimeout,
+      );
+    }
+
+    const payload = await parseResponse(response);
+
+    // 401: tentar refresh uma única vez (nunca em endpoints de auth)
+    if (response.status === 401) {
+      if (!isAuthEndpoint && !isRetry) {
+        const refreshed = await singleFlightRefresh();
+        if (refreshed) return attempt(true);
       }
-    } else if (refreshResponse.status >= 500) {
+      // Refresh falhou ou segundo 401: limpar token e propagar erro
+      clearAccessToken();
+      throw buildApiError(payload, 401);
+    }
+
+    // 5xx → ApiUnavailableError
+    if (response.status >= 500) {
       throw new ApiUnavailableError();
     }
+
+    // Qualquer outro erro HTTP → ApiError (401/403/404/409/422/429 NÃO viram ApiUnavailableError)
+    if (!response.ok) {
+      throw buildApiError(payload, response.status, response.headers.get("Retry-After"));
+    }
+
+    return payload as T;
   }
 
-  if (response.status >= 500) {
-    throw new ApiUnavailableError();
-  }
-
-  if (!response.ok) {
-    const message =
-      payload && typeof payload === "object" && "detail" in payload
-        ? formatApiDetail((payload as { detail: unknown }).detail)
-        : payload && typeof payload === "object" && "error" in payload
-        ? formatApiDetail((payload as { error: unknown }).error)
-        : `A API respondeu com status ${response.status}.`;
-    throw new ApiError(message, response.status, payload);
-  }
-
-  return payload as T;
+  return attempt(false);
 }
 
-function formatApiDetail(detail: unknown): string {
-  if (typeof detail === "string") return detail;
-  if (detail && typeof detail === "object" && "message" in detail) return String((detail as { message: unknown }).message);
-  return JSON.stringify(detail);
-}
+// ---------------------------------------------------------------------------
+// Métodos shorthand
+// ---------------------------------------------------------------------------
 
 export const api = {
-  get: <T>(path: string, options: RequestOptions = {}) => apiRequest<T>(path, { ...options, method: "GET" }),
-  post: <T>(path: string, body?: unknown, options: RequestOptions = {}) => apiRequest<T>(path, { ...options, method: "POST", body }),
-  patch: <T>(path: string, body?: unknown, options: RequestOptions = {}) => apiRequest<T>(path, { ...options, method: "PATCH", body }),
-  delete: <T>(path: string, options: RequestOptions = {}) => apiRequest<T>(path, { ...options, method: "DELETE" }),
+  get: <T>(path: string, options: RequestOptions = {}) =>
+    apiRequest<T>(path, { ...options, method: "GET" }),
+  post: <T>(path: string, body?: unknown, options: RequestOptions = {}) =>
+    apiRequest<T>(path, { ...options, method: "POST", body }),
+  patch: <T>(path: string, body?: unknown, options: RequestOptions = {}) =>
+    apiRequest<T>(path, { ...options, method: "PATCH", body }),
+  delete: <T>(path: string, options: RequestOptions = {}) =>
+    apiRequest<T>(path, { ...options, method: "DELETE" }),
 };

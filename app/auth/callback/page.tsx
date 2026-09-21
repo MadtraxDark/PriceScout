@@ -2,9 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/utils/api/client";
 import { authApi } from "@/utils/api/services";
-import type { AuthSessionData } from "@/utils/api/services";
 
 function getSafeNext(value: string | null): string {
   return value && value.startsWith("/") && !value.startsWith("//") ? value : "/admin";
@@ -32,23 +30,19 @@ export default function AuthCallbackPage() {
 
         if (error) throw new Error(error);
 
-        // Compatibilidade com retornos antigos que ainda contenham code. O
-        // callback nao recebe redirect_frontend_url para retornar JSON e
-        // permitir que o backend grave o cookie nesta requisicao.
-        const code = searchParams.get("code");
-        if (code) {
-          setStatusText("Validando codigo de autorizacao na API...");
-          const callbackQuery = new URLSearchParams({ code });
-          const state = searchParams.get("state");
-          if (state) callbackQuery.set("state", state);
-          await api.get<AuthSessionData>(
-            `/api/v1/auth/google/callback?${callbackQuery.toString()}`
-          );
+        const captured = authApi.captureAccessTokenFromHash();
+        if (captured) {
+          setStatusText("Token de acesso recebido. Confirmando sessao...");
+        } else {
+          setStatusText("Renovando sessao via refresh cookie...");
+          try {
+            await authApi.refreshSession();
+          } catch {
+            // Sem fragment nem refresh — me() falhara com 401
+          }
+          setStatusText("Confirmando sessao na API...");
         }
 
-        // A sessao e um cookie HttpOnly criado pelo backend. Nao ler nem
-        // persistir access_token/refresh_token no armazenamento do browser.
-        setStatusText("Confirmando sessao na API...");
         await authApi.me();
 
         if (!active) return;

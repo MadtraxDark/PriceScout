@@ -7,6 +7,12 @@
       "skillPath": "plugins/design-assets/skills/color-palette/SKILL.md",
       "computedHash": "ca6093803bc93cfe329d8121c9ac066a8870c88d0d9ece6a1c3118d86af57943"
     },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "106acf230014cbb43ca34e6410371321b56ca742f9ee0442e8ec05bf02eb0384"
+    },
     "visual-design-foundations": {
       "source": "wshobson/agents",
       "sourceType": "github",

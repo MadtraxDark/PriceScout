@@ -10,18 +10,63 @@ import StoreConfigurationForm, { storeLogoDataUrl as svgDataUrl } from "@/compon
 import { catalogApi } from "@/utils/api/services";
 import { ApiError, apiUrl } from "@/utils/api/client";
 import type { CatalogOverview as CatalogOverviewData, CatalogProduct, CatalogStore, ExistingCatalogProduct, ProductPreview, StoreMarketOption } from "@/utils/api/contracts";
+import {
+  defaultIncludeImagesForStore,
+  matchStoreByHostname,
+  type StoreCapability,
+} from "@/utils/storeCapabilities";
 
-type View = "overview" | "products" | "stores" | "product" | "store";
+type View = "overview" | "products" | "stores" | "product";
 type ScrapeStatus = "idle" | "loading" | "ready" | "error";
 type ImportStepStatus = "pending" | "active" | "completed" | "error";
 type ImportStep = { id: string; label: string; status: ImportStepStatus };
 
+function toStoreCapability(store: CatalogStore): StoreCapability {
+  return {
+    key: store.id,
+    domains: store.domains?.length ? store.domains : store.hostname ? [store.hostname] : [],
+    implemented: true,
+    supports_images: store.supports_images !== false,
+    image_fetch_cost: store.image_fetch_cost ?? "low",
+    default_include_images: store.default_include_images === true,
+  };
+}
+
+function progressMessagesForPreview(includeImages: boolean): string[] {
+  const base = [
+    "Acessando página do produto...",
+    "Identificando produto...",
+    "Coletando preços e condições...",
+    "Buscando marca e vendedor...",
+  ];
+  if (includeImages) {
+    return [...base, "Buscando imagens...", "Preparando preview..."];
+  }
+  return [...base, "Preparando preview..."];
+}
+
 function duplicateProductFromError(error: unknown): ExistingCatalogProduct | null {
   if (!(error instanceof ApiError) || error.status !== 409 || !error.details || typeof error.details !== "object") return null;
-  const detail = "detail" in error.details && error.details.detail && typeof error.details.detail === "object"
-    ? error.details.detail as { existing_product?: ExistingCatalogProduct }
-    : null;
-  return detail?.existing_product ?? null;
+  const d = error.details as Record<string, unknown>;
+
+  // Formato ScoutApiV2: error.details = {code, message, existing_product, ...}
+  if ("existing_product" in d && d.existing_product && typeof d.existing_product === "object") {
+    const ep = d.existing_product as Record<string, unknown>;
+    return {
+      id: String(ep.id ?? ""),
+      name: ep.title ? String(ep.title) : ep.name ? String(ep.name) : null,
+      brand: ep.brand != null ? String(ep.brand) : null,
+      created_at: ep.created_at ? String(ep.created_at) : null,
+    };
+  }
+
+  // Formato legado: error.details = {detail: {existing_product}}
+  if ("detail" in d && d.detail && typeof d.detail === "object") {
+    const inner = d.detail as { existing_product?: ExistingCatalogProduct };
+    return inner.existing_product ?? null;
+  }
+
+  return null;
 }
 
 function formatCatalogDate(value?: string | null): string {
@@ -30,16 +75,6 @@ function formatCatalogDate(value?: string | null): string {
   if (Number.isNaN(date.getTime())) return "Data não informada";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "long" }).format(date);
 }
-
-const scrapeProgressMessages = [
-  "Acessando página do produto...",
-  "Identificando produto...",
-  "Coletando preços e condições...",
-  "Verificando estoque e disponibilidade...",
-  "Buscando marca e vendedor...",
-  "Carregando imagens do produto...",
-  "Preparando preview...",
-];
 
 const importStepDefinitions = [
   { id: "request", label: "Enviando a prévia aprovada..." },
@@ -97,15 +132,12 @@ const navItems: { id: View; label: string; icon: "grid" | "box" | "store" }[] = 
   { id: "products", label: "Produtos cadastrados", icon: "box" },
   { id: "stores", label: "Lojas cadastradas", icon: "store" },
   { id: "product", label: "Adicionar produto", icon: "box" },
-  { id: "store", label: "Adicionar site por link", icon: "store" },
 ];
 
 export default function Home() {
   const [view, setView] = useState<View>("overview");
   const [notice, setNotice] = useState("");
   const [productUrl, setProductUrl] = useState("");
-  const [storeName, setStoreName] = useState("");
-  const [storeUrl, setStoreUrl] = useState("");
   const [scrapeStatus, setScrapeStatus] = useState<ScrapeStatus>("idle");
   const [scrapedProduct, setScrapedProduct] = useState<ProductPreview | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -130,6 +162,22 @@ export default function Home() {
   const importPanelRef = useRef<HTMLDivElement | null>(null);
   const importSuccessRef = useRef<HTMLDivElement | null>(null);
   const previewRef = useRef<HTMLElement | null>(null);
+  const [includeImages, setIncludeImages] = useState(false);
+  const [includeImagesTouched, setIncludeImagesTouched] = useState(false);
+
+  const matchedStore = useMemo(() => {
+    const parsed = parseHttpUrl(productUrl);
+    if (!parsed) return null;
+    return matchStoreByHostname(
+      parsed.hostname,
+      catalogStores.map(toStoreCapability),
+    );
+  }, [productUrl, catalogStores]);
+
+  useEffect(() => {
+    if (includeImagesTouched) return;
+    setIncludeImages(defaultIncludeImagesForStore(matchedStore));
+  }, [matchedStore, includeImagesTouched]);
 
   useEffect(() => {
     if (!importing || !importPanelRef.current) return;
@@ -225,7 +273,7 @@ export default function Home() {
     void catalogApi.listStoreMarkets().then((result) => setStoreMarkets(result.markets ?? [])).catch(() => undefined);
     const params = new URLSearchParams(window.location.search);
     const requestedView = params.get("view");
-    if (requestedView === "overview" || requestedView === "products" || requestedView === "stores" || requestedView === "product" || requestedView === "store") {
+    if (requestedView === "overview" || requestedView === "products" || requestedView === "stores" || requestedView === "product") {
       window.setTimeout(() => setView(requestedView), 0);
     }
   }, []);
@@ -253,15 +301,16 @@ export default function Home() {
     if (previewId) void catalogApi.discardPreview(previewId).catch(() => undefined);
     window.localStorage.removeItem("pricescout:product-preview");
     setPreviewId(null); setExistingProductId(null); setDuplicateProduct(null); setScrapeStatus("loading"); setScrapeError(""); setNotice(""); setScrapedProduct(null); setApprovedPreview(false); setProgressIndex(0);
+    const messages = progressMessagesForPreview(includeImages);
     let currentProgressIndex = 0;
     const progressTimer = window.setInterval(() => {
-      currentProgressIndex = (currentProgressIndex + 1) % scrapeProgressMessages.length;
+      currentProgressIndex = (currentProgressIndex + 1) % messages.length;
       setProgressIndex(currentProgressIndex);
     }, 1200);
     try {
-      const result = await catalogApi.previewProduct(productUrl);
+      const result = await catalogApi.previewProduct(productUrl, { includeImages });
       if (!result.product) throw new Error("A API não retornou a prévia do produto.");
-      setProgressIndex(scrapeProgressMessages.length - 1);
+      setProgressIndex(messages.length - 1);
       setScrapedProduct(result.product); setReviewedUrl(productUrl); setPreviewId(result.preview_id ?? null); setScrapeStatus("ready");
       window.localStorage.setItem("pricescout:product-preview", JSON.stringify({ previewId: result.preview_id, product: result.product, expiresAt: result.expires_at, url: productUrl }));
       window.setTimeout(revealPreview, 80);
@@ -270,7 +319,7 @@ export default function Home() {
       const duplicate = duplicateProductFromError(error);
       setExistingProductId(duplicate?.id ?? null);
       setDuplicateProduct(duplicate);
-      setScrapeStatus("error"); setScrapeError(duplicate ? "Produto já cadastrado. A prévia não pode ser importada novamente." : `Falha na etapa “${scrapeProgressMessages[currentProgressIndex]}” ${message}`);
+      setScrapeStatus("error"); setScrapeError(duplicate ? "Produto já cadastrado. A prévia não pode ser importada novamente." : `Falha na etapa “${messages[currentProgressIndex]}” ${message}`);
     } finally {
       window.clearInterval(progressTimer);
     }
@@ -342,6 +391,7 @@ export default function Home() {
 
   function changeProductUrl(value: string) {
     setProductUrl(value);
+    setIncludeImagesTouched(false);
     if (value !== reviewedUrl) {
       setExistingProductId(null);
       setDuplicateProduct(null);
@@ -370,19 +420,6 @@ export default function Home() {
     setNotice("");
   }
 
-  async function submitStore(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const parsedUrl = parseHttpUrl(storeUrl);
-    if (!parsedUrl) { setNotice("Informe um link válido usando http:// ou https://."); return; }
-    try {
-      await catalogApi.createStore({ name: storeName, url: storeUrl });
-      await reloadCatalog();
-      setNotice(`A loja ${parsedUrl.hostname} foi cadastrada no catálogo.`);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Não foi possível salvar a loja.");
-    }
-  }
-
   async function saveStore(input: { name: string; url: string; country: string; currency: string; logo_svg?: string | null }) {
     if (!editingStore) return;
     try {
@@ -407,14 +444,8 @@ export default function Home() {
 
   return <main className="admin-shell">
     <aside className="sidebar"><div className="sidebar-top"><Logo /><span className="admin-badge">admin</span></div><nav className="main-nav" aria-label="Navegação principal"><p className="nav-label">Workspace</p>{navItems.map((item) => <button key={item.id} className={`nav-item ${view === item.id ? "active" : ""}`} onClick={() => openView(item.id)}><Icon name={item.icon} /><span>{item.label}</span>{item.id === "overview" && <span className="nav-arrow"><Icon name="arrow" /></span>}</button>)}</nav><div className="sidebar-note"><span className="live-dot" /><div><strong>API conectada</strong><span>Operações centralizadas</span></div></div><div className="sidebar-bottom"><div className="user-profile"><span className="avatar">--</span><span><strong>Conta administrativa</strong><small>Identidade não carregada</small></span></div></div></aside>
-    <section className="content-shell"><header className="topbar"><div className="mobile-logo"><Logo /></div><div className="search-box"><Icon name="search" /><input aria-label="Buscar no PriceScout" placeholder="Buscar no catálogo" /></div><div className="topbar-actions"><button className="icon-action" aria-label="Notificações"><Icon name="bell" /></button><div className="topbar-divider" /><span className="environment">API externa</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <Overview openView={openView} /> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} onEditStore={() => undefined} /> : view === "stores" ? <CatalogView kind="stores" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} onEditStore={setEditingStore} /> : <FormView view={view} notice={notice} onSubmit={view === "product" ? submitProduct : submitStore} productUrl={productUrl} onProductUrlChange={changeProductUrl} storeName={storeName} setStoreName={setStoreName} storeUrl={storeUrl} setStoreUrl={setStoreUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} existingProductId={existingProductId} duplicateProduct={duplicateProduct} approvedPreview={approvedPreview} onApprove={approvePreview} progressMessage={scrapeProgressMessages[progressIndex]} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}{editingStore && <div className="store-editor-backdrop" role="presentation"><section className="store-editor" role="dialog" aria-modal="true" aria-labelledby="store-editor-title"><div className="store-editor-heading"><div><p className="eyebrow">Loja cadastrada</p><h2 id="store-editor-title">Editar loja</h2></div><button className="lightbox-close" type="button" onClick={() => setEditingStore(null)} aria-label="Fechar edição"><Icon name="close" /></button></div><StoreConfigurationForm store={editingStore} markets={storeMarkets} onCancel={() => setEditingStore(null)} onSave={saveStore} onLogoUpload={(file) => file.text()} /></section></div>}</section>
+    <section className="content-shell"><header className="topbar"><div className="mobile-logo"><Logo /></div><div className="search-box"><Icon name="search" /><input aria-label="Buscar no PriceScout" placeholder="Buscar no catálogo" /></div><div className="topbar-actions"><button className="icon-action" aria-label="Notificações"><Icon name="bell" /></button><div className="topbar-divider" /><span className="environment">API externa</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <Overview openView={openView} /> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : view === "stores" ? <CatalogView kind="stores" products={catalogProducts} stores={catalogStores} loading={catalogLoading} onEditStore={setEditingStore} /> : <FormView notice={notice} onSubmit={submitProduct} productUrl={productUrl} onProductUrlChange={changeProductUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} existingProductId={existingProductId} duplicateProduct={duplicateProduct} approvedPreview={approvedPreview} onApprove={approvePreview} progressMessage={progressMessagesForPreview(includeImages)[progressIndex] ?? "Preparando preview..."} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} matchedStore={matchedStore} includeImages={includeImages} onIncludeImagesChange={(value) => { setIncludeImagesTouched(true); setIncludeImages(value); }} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}{editingStore && <div className="store-editor-backdrop" role="presentation"><section className="store-editor" role="dialog" aria-modal="true" aria-labelledby="store-editor-title"><div className="store-editor-heading"><div><p className="eyebrow">Loja cadastrada</p><h2 id="store-editor-title">Editar loja</h2></div><button className="lightbox-close" type="button" onClick={() => setEditingStore(null)} aria-label="Fechar edição"><Icon name="close" /></button></div><StoreConfigurationForm store={editingStore} markets={storeMarkets} onCancel={() => setEditingStore(null)} onSave={saveStore} onLogoUpload={(file) => file.text()} /></section></div>}</section>
   </main>;
-}
-
-// Kept for backwards-compatible source history; the data-backed Overview is the active surface.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function LegacyOverview({ openView }: { openView: (view: View) => void }) {
-  return <><div className="page-intro"><div><p className="eyebrow">Visão geral</p><h1>Seu catálogo começa aqui.</h1><p className="intro-copy">Cole um link de produto, confira a coleta real e aprove a prévia antes de qualquer entrada no catálogo.</p></div><button className="primary-button" onClick={() => openView("product")}><Icon name="plus" /> Adicionar produto</button></div><section className="empty-state"><span className="empty-icon"><Icon name="grid" /></span><h2>Nenhum dado disponível</h2><p>Os indicadores, alertas e atividades aparecerão aqui somente depois que registros reais forem cadastrados e confirmados.</p><div className="empty-actions"><button className="primary-button" onClick={() => openView("product")}><Icon name="plus" /> Adicionar produto</button><button className="outline-button" onClick={() => openView("store")}>Adicionar site por link <Icon name="arrow" /></button></div></section></>;
 }
 
 function Overview({ openView }: { openView: (view: View) => void }) {
@@ -429,44 +460,56 @@ function Overview({ openView }: { openView: (view: View) => void }) {
   const { summary, recent_products, best_price_opportunities, single_offer_variants, alerts, recent_activity } = data;
   const hasRecords = summary.products + summary.variants + summary.offers + summary.stores > 0;
   const date = (value: string) => formatCatalogDate(value);
-  if (!hasRecords) return <><div className="page-intro"><div><p className="eyebrow">Visao geral</p><h1>Seu catalogo comeca aqui.</h1><p className="intro-copy">Cadastre um produto ou uma loja para comecar a acompanhar o catalogo.</p></div><button className="primary-button" onClick={() => openView("product")}><Icon name="plus" /> Adicionar produto</button></div><section className="empty-state"><span className="empty-icon"><Icon name="grid" /></span><h2>Nenhum dado disponivel</h2><p>Os indicadores aparecerao aqui quando houver registros reais confirmados.</p><div className="empty-actions"><button className="primary-button" onClick={() => openView("product")}><Icon name="plus" /> Adicionar produto</button><button className="outline-button" onClick={() => openView("store")}>Adicionar site por link <Icon name="arrow" /></button></div></section></>;
-  return <div className="overview-page"><div className="page-intro"><div><p className="eyebrow">Visao geral</p><h1>Seu catalogo em uma leitura.</h1><p className="intro-copy">Acompanhe produtos, cobertura de ofertas e oportunidades calculadas a partir dos dados persistidos.</p></div><div className="overview-actions"><button className="primary-button" onClick={() => openView("product")}><Icon name="plus" /> Adicionar produto</button><button className="outline-button" onClick={() => openView("store")}>Adicionar site por link</button></div></div>{error && <p className="error-notice" role="status">{error} Os demais dados continuam disponiveis.</p>}<section className="overview-metrics" aria-label="Resumo do catalogo">{[["Produtos", summary.products, "box"], ["Variacoes", summary.variants, "grid"], ["Ofertas", summary.offers, "arrow"], ["Lojas", summary.stores, "store"]].map(([label, value, icon]) => <article className="overview-metric" key={String(label)}><div><span>{label}</span><Icon name={icon as "box" | "grid" | "arrow" | "store"} /></div><strong>{value}</strong></article>)}</section><div className="overview-columns"><section className="overview-panel"><div className="section-heading"><div><p className="eyebrow">Catalogo</p><h2>Produtos recentes</h2></div><button className="text-button" onClick={() => openView("products")}>Ver produtos <Icon name="arrow" /></button></div>{recent_products.length ? <div className="overview-list">{recent_products.map((product) => <Link className="overview-product" href={`/admin/produtos/${product.id}`} key={product.id}><div className="overview-product-image">{product.image_url ? <MediaImage src={product.image_url} alt="" /> : <Icon name="box" />}</div><div><strong>{product.name}</strong><span>{product.brand || "Marca nao informada"}</span><small>{date(product.created_at)} · {product.variants} variacoes · {product.offers} ofertas</small></div><Icon name="arrow" /></Link>)}</div> : <p className="overview-muted">Nenhum produto recente.</p>}</section><section className="overview-panel"><div className="section-heading"><div><p className="eyebrow">Comparacao</p><h2>Melhores oportunidades</h2></div></div>{best_price_opportunities.length ? <div className="overview-list">{best_price_opportunities.map((item) => <article className="overview-opportunity" key={item.variant_id}><div><strong>{item.product_name}</strong><span>{item.variant_label || "Variacao unica"}</span>{item.offers.slice(0, 3).map((offer) => <small key={`${item.variant_id}-${offer.store_name}`}>{offer.store_name || "Loja"}: {money(offer.price)}</small>)}</div><b>Economia {money(item.savings)}</b></article>)}</div> : <p className="overview-muted">Ainda nao ha duas ofertas comparaveis na mesma variacao.</p>}</section></div><div className="overview-columns"><section className="overview-panel"><div className="section-heading"><div><p className="eyebrow">Cobertura</p><h2>Precisam de comparacao</h2></div></div>{single_offer_variants.length ? <div className="overview-list">{single_offer_variants.map((item) => <Link className="overview-simple-row" href={`/admin/produtos/${item.product_id}`} key={item.variant_id}><span><strong>{item.product_name}</strong><small>{item.variant_label || "Variacao unica"} · {item.store_name || "Uma loja associada"}</small></span><Icon name="arrow" /></Link>)}</div> : <p className="overview-muted">Nao ha variacoes com apenas uma oferta.</p>}</section><section className="overview-panel"><div className="section-heading"><div><p className="eyebrow">Saude do catalogo</p><h2>Alertas reais</h2></div></div>{alerts.length ? <div className="overview-list">{alerts.map((alert) => <button className="overview-simple-row overview-alert" key={alert.kind} onClick={() => openView("products")}><span><strong>{alert.label}</strong><small>{alert.count} registro(s) identificado(s)</small></span><Icon name="arrow" /></button>)}</div> : <p className="overview-muted">Nenhum alerta identificado pelos dados atuais.</p>}</section></div><section className="overview-panel overview-activity"><div className="section-heading"><div><p className="eyebrow">Timestamps persistidos</p><h2>Atividade recente</h2></div></div>{recent_activity.length ? <div className="overview-list">{recent_activity.map((item, index) => <div className="overview-simple-row" key={`${item.kind}-${item.product_id}-${item.occurred_at}-${index}`}><span><strong>{item.label}</strong><small>{item.product_name || "Catalogo"} · {date(item.occurred_at)}</small></span></div>)}</div> : <p className="overview-muted">Ainda nao ha timestamps suficientes para atividade.</p>}</section></div>;
+  if (!hasRecords) return <><div className="page-intro"><div><p className="eyebrow">Visao geral</p><h1>Seu catalogo comeca aqui.</h1><p className="intro-copy">Adicione um produto para comecar a acompanhar o catalogo.</p></div><button className="primary-button" onClick={() => openView("product")}><Icon name="plus" /> Adicionar produto</button></div><section className="empty-state"><span className="empty-icon"><Icon name="grid" /></span><h2>Nenhum dado disponivel</h2><p>Os indicadores aparecerao aqui quando houver registros reais confirmados.</p><div className="empty-actions"><button className="primary-button" onClick={() => openView("product")}><Icon name="plus" /> Adicionar produto</button></div></section></>;
+  return <div className="overview-page"><div className="page-intro"><div><p className="eyebrow">Visao geral</p><h1>Seu catalogo em uma leitura.</h1><p className="intro-copy">Acompanhe produtos, cobertura de ofertas e oportunidades calculadas a partir dos dados persistidos.</p></div><div className="overview-actions"><button className="primary-button" onClick={() => openView("product")}><Icon name="plus" /> Adicionar produto</button></div></div>{error && <p className="error-notice" role="status">{error} Os demais dados continuam disponiveis.</p>}<section className="overview-metrics" aria-label="Resumo do catalogo">{[["Produtos", summary.products, "box"], ["Variacoes", summary.variants, "grid"], ["Ofertas", summary.offers, "arrow"], ["Lojas", summary.stores, "store"]].map(([label, value, icon]) => <article className="overview-metric" key={String(label)}><div><span>{label}</span><Icon name={icon as "box" | "grid" | "arrow" | "store"} /></div><strong>{value}</strong></article>)}</section><div className="overview-columns"><section className="overview-panel"><div className="section-heading"><div><p className="eyebrow">Catalogo</p><h2>Produtos recentes</h2></div><button className="text-button" onClick={() => openView("products")}>Ver produtos <Icon name="arrow" /></button></div>{recent_products.length ? <div className="overview-list">{recent_products.map((product) => <Link className="overview-product" href={`/admin/produtos/${product.id}`} key={product.id}><div className="overview-product-image">{product.image_url ? <MediaImage src={product.image_url} alt="" /> : <Icon name="box" />}</div><div><strong>{product.name}</strong><span>{product.brand || "Marca nao informada"}</span><small>{date(product.created_at)} · {product.variants} variacoes · {product.offers} ofertas</small></div><Icon name="arrow" /></Link>)}</div> : <p className="overview-muted">Nenhum produto recente.</p>}</section><section className="overview-panel"><div className="section-heading"><div><p className="eyebrow">Comparacao</p><h2>Melhores oportunidades</h2></div></div>{best_price_opportunities.length ? <div className="overview-list">{best_price_opportunities.map((item) => <article className="overview-opportunity" key={item.variant_id}><div><strong>{item.product_name}</strong><span>{item.variant_label || "Variacao unica"}</span>{item.offers.slice(0, 3).map((offer) => <small key={`${item.variant_id}-${offer.store_name}`}>{offer.store_name || "Loja"}: {money(offer.price)}</small>)}</div><b>Economia {money(item.savings)}</b></article>)}</div> : <p className="overview-muted">Ainda nao ha duas ofertas comparaveis na mesma variacao.</p>}</section></div><div className="overview-columns"><section className="overview-panel"><div className="section-heading"><div><p className="eyebrow">Cobertura</p><h2>Precisam de comparacao</h2></div></div>{single_offer_variants.length ? <div className="overview-list">{single_offer_variants.map((item) => <Link className="overview-simple-row" href={`/admin/produtos/${item.product_id}`} key={item.variant_id}><span><strong>{item.product_name}</strong><small>{item.variant_label || "Variacao unica"} · {item.store_name || "Uma loja associada"}</small></span><Icon name="arrow" /></Link>)}</div> : <p className="overview-muted">Nao ha variacoes com apenas uma oferta.</p>}</section><section className="overview-panel"><div className="section-heading"><div><p className="eyebrow">Saude do catalogo</p><h2>Alertas reais</h2></div></div>{alerts.length ? <div className="overview-list">{alerts.map((alert) => <button className="overview-simple-row overview-alert" key={alert.kind} onClick={() => openView("products")}><span><strong>{alert.label}</strong><small>{alert.count} registro(s) identificado(s)</small></span><Icon name="arrow" /></button>)}</div> : <p className="overview-muted">Nenhum alerta identificado pelos dados atuais.</p>}</section></div><section className="overview-panel overview-activity"><div className="section-heading"><div><p className="eyebrow">Timestamps persistidos</p><h2>Atividade recente</h2></div></div>{recent_activity.length ? <div className="overview-list">{recent_activity.map((item, index) => <div className="overview-simple-row" key={`${item.kind}-${item.product_id}-${item.occurred_at}-${index}`}><span><strong>{item.label}</strong><small>{item.product_name || "Catalogo"} · {date(item.occurred_at)}</small></span></div>)}</div> : <p className="overview-muted">Ainda nao ha timestamps suficientes para atividade.</p>}</section></div>;
 }
 
 function money(value: number | null) {
   return value === null ? "—" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 }
 
-function CatalogView({ kind, openView, products, stores, loading, onEditStore }: { kind: "products" | "stores"; openView: (view: View) => void; products: CatalogProduct[]; stores: CatalogStore[]; loading: boolean; onEditStore: (store: CatalogStore) => void }) {
+function CatalogView({ kind, openView, products, stores, loading, onEditStore = () => undefined }: { kind: "products" | "stores"; openView?: (view: View) => void; products: CatalogProduct[]; stores: CatalogStore[]; loading: boolean; onEditStore?: (store: CatalogStore) => void }) {
   const isProducts = kind === "products";
   const rows = isProducts ? products : stores;
-  return <div className="catalog-page"><div className="page-intro"><div><p className="eyebrow">Catálogo</p><h1>{isProducts ? "Produtos cadastrados." : "Lojas cadastradas."}</h1><p className="intro-copy">{isProducts ? "Identifique rapidamente cada produto pela imagem e pelo nome." : "Consulte as lojas e sites confirmados como fontes oficiais."}</p></div><button className="primary-button" onClick={() => openView(isProducts ? "product" : "store")}><Icon name="plus" /> {isProducts ? "Adicionar produto" : "Adicionar site por link"}</button></div>{loading ? <section className="empty-state"><h2>Carregando registros...</h2></section> : rows.length === 0 ? <section className="empty-state"><span className="empty-icon"><Icon name={isProducts ? "box" : "store"} /></span><h2>Nenhum registro disponível</h2><p>{isProducts ? "Os produtos aparecerão aqui depois que forem cadastrados e aprovados." : "As lojas aparecerão aqui depois que forem cadastradas e aprovadas."}</p><button className="outline-button" onClick={() => openView(isProducts ? "product" : "store")}><Icon name="plus" /> {isProducts ? "Cadastrar produto" : "Adicionar site por link"}</button></section> : isProducts ? <section className="catalog-grid" aria-label="Produtos cadastrados">{products.map((product) => { const firstOffer = product.variants.flatMap((variant) => variant.offers)[0]; const image = product.images.find((item) => item.is_main)?.original_url ?? product.images[0]?.original_url ?? firstOffer?.image_url ?? null; const offerUrl = firstOffer?.canonical_url ?? null; return <article className="catalog-card" key={product.id}><Link className="catalog-card-manage" href={`/admin/produtos/${product.id}`} aria-label={`Gerenciar ${product.canonical_name}`}><div className="catalog-card-media">{image ? <MediaImage key={image} src={image} alt="" className="catalog-media-image" /> : <span className="catalog-card-media-empty"><Icon name="box" /><span>Imagem não disponível</span></span>}</div><div className="catalog-card-body"><h2>{product.canonical_name}</h2><span className="catalog-card-link">Gerenciar produto <Icon name="arrow" /></span></div></Link>{offerUrl ? <a className="catalog-card-source" href={offerUrl} target="_blank" rel="noreferrer">Abrir origem <Icon name="external" /></a> : <span className="catalog-card-source">Oferta sem URL disponível</span>}</article>; })}</section> : <section className="catalog-list">{stores.map((store) => <article className="catalog-row" key={store.id}><div className="catalog-row-icon">{store.logo_svg ? <img src={svgDataUrl(store.logo_svg)} alt="" /> : <Icon name="store" />}</div><div className="catalog-row-main"><strong>{store.name}</strong><span>{store.hostname}</span></div><div className="catalog-row-meta"><b>{store.productCount} {store.productCount === 1 ? "produto" : "produtos"}</b><span>{store.country} · {store.currency}</span></div><button className="catalog-row-edit" type="button" onClick={() => onEditStore(store)} aria-label={`Editar ${store.name}`}><Icon name="pencil" /></button><a className="catalog-row-link" href={store.url} target="_blank" rel="noreferrer" aria-label={`Abrir ${store.name}`}><Icon name="external" /></a></article>)}</section>}</div>;
+  return <div className="catalog-page"><div className="page-intro"><div><p className="eyebrow">Catálogo</p><h1>{isProducts ? "Produtos cadastrados." : "Lojas cadastradas."}</h1><p className="intro-copy">{isProducts ? "Identifique rapidamente cada produto pela imagem e pelo nome." : "Consulte as lojas e sites confirmados como fontes oficiais."}</p></div>{isProducts && openView && <button className="primary-button" onClick={() => openView("product")}><Icon name="plus" /> Adicionar produto</button>}</div>{loading ? <section className="empty-state"><h2>Carregando registros...</h2></section> : rows.length === 0 ? <section className="empty-state"><span className="empty-icon"><Icon name={isProducts ? "box" : "store"} /></span><h2>Nenhum registro disponível</h2><p>{isProducts ? "Os produtos aparecerão aqui depois que forem cadastrados e aprovados." : "As lojas pré-cadastradas aparecerão aqui quando estiverem disponíveis."}</p>{isProducts && openView && <button className="outline-button" onClick={() => openView("product")}><Icon name="plus" /> Cadastrar produto</button>}</section> : isProducts ? <section className="catalog-grid" aria-label="Produtos cadastrados">{products.map((product) => { const firstOffer = product.variants.flatMap((variant) => variant.offers)[0]; const image = product.images.find((item) => item.is_main)?.original_url ?? product.images[0]?.original_url ?? firstOffer?.image_url ?? null; const offerUrl = firstOffer?.canonical_url ?? null; return <article className="catalog-card" key={product.id}><Link className="catalog-card-manage" href={`/admin/produtos/${product.id}`} aria-label={`Gerenciar ${product.canonical_name}`}><div className="catalog-card-media">{image ? <MediaImage key={image} src={image} alt="" className="catalog-media-image" /> : <span className="catalog-card-media-empty"><Icon name="box" /><span>Imagem não disponível</span></span>}</div><div className="catalog-card-body"><h2>{product.canonical_name}</h2><span className="catalog-card-link">Gerenciar produto <Icon name="arrow" /></span></div></Link>{offerUrl ? <a className="catalog-card-source" href={offerUrl} target="_blank" rel="noreferrer">Abrir origem <Icon name="external" /></a> : <span className="catalog-card-source">Oferta sem URL disponível</span>}</article>; })}</section> : <section className="catalog-list">{stores.map((store) => <article className="catalog-row" key={store.id}><div className="catalog-row-icon">{store.logo_svg ? <img src={svgDataUrl(store.logo_svg)} alt="" /> : <Icon name="store" />}</div><div className="catalog-row-main"><strong>{store.name}</strong><span>{store.hostname}</span></div><div className="catalog-row-meta"><b>{store.productCount} {store.productCount === 1 ? "produto" : "produtos"}</b><span>{store.country} · {store.currency}</span></div><button className="catalog-row-edit" type="button" onClick={() => onEditStore(store)} aria-label={`Editar ${store.name}`}><Icon name="pencil" /></button><a className="catalog-row-link" href={store.url} target="_blank" rel="noreferrer" aria-label={`Abrir ${store.name}`}><Icon name="external" /></a></article>)}</section>}</div>;
 }
 
-function FormView({ view, notice, onSubmit, productUrl, onProductUrlChange, storeName, setStoreName, storeUrl, setStoreUrl, scrapeStatus, scrapedProduct, scrapeError, existingProductId, duplicateProduct, approvedPreview, onApprove, progressMessage, previewVisible, onRevealPreview, previewRef, importing, importSteps, importError, importPanelRef, importSuccessRef }: { view: "product" | "store"; notice: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; productUrl: string; onProductUrlChange: (value: string) => void; storeName: string; setStoreName: (value: string) => void; storeUrl: string; setStoreUrl: (value: string) => void; scrapeStatus: ScrapeStatus; scrapedProduct: ProductPreview | null; scrapeError: string; existingProductId: string | null; duplicateProduct: ExistingCatalogProduct | null; approvedPreview: boolean; onApprove: () => void; progressMessage: string; previewVisible: boolean; onRevealPreview: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; importSteps: ImportStep[]; importError: string; importPanelRef: RefObject<HTMLDivElement | null>; importSuccessRef: RefObject<HTMLDivElement | null> }) {
-  const isProduct = view === "product";
-  const detectedUrl = useMemo(() => parseHttpUrl(isProduct ? productUrl : storeUrl), [isProduct, productUrl, storeUrl]);
+function FormView({ notice, onSubmit, productUrl, onProductUrlChange, scrapeStatus, scrapedProduct, scrapeError, existingProductId, duplicateProduct, approvedPreview, onApprove, progressMessage, previewVisible, onRevealPreview, previewRef, importing, importSteps, importError, importPanelRef, importSuccessRef, matchedStore, includeImages, onIncludeImagesChange }: { notice: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; productUrl: string; onProductUrlChange: (value: string) => void; scrapeStatus: ScrapeStatus; scrapedProduct: ProductPreview | null; scrapeError: string; existingProductId: string | null; duplicateProduct: ExistingCatalogProduct | null; approvedPreview: boolean; onApprove: () => void; progressMessage: string; previewVisible: boolean; onRevealPreview: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; importSteps: ImportStep[]; importError: string; importPanelRef: RefObject<HTMLDivElement | null>; importSuccessRef: RefObject<HTMLDivElement | null>; matchedStore: StoreCapability | null; includeImages: boolean; onIncludeImagesChange: (value: boolean) => void }) {
+  const detectedUrl = useMemo(() => parseHttpUrl(productUrl), [productUrl]);
+  const showImageOption = Boolean(detectedUrl && matchedStore?.supports_images);
   const productFields = <>
     <label htmlFor="product-url">URL do produto<span className="required">Obrigatório</span></label>
     <input id="product-url" type="url" value={productUrl} onChange={(e) => onProductUrlChange(e.target.value)} placeholder="Cole o link oficial do produto" required />
     <p className="helper">A API identifica a loja e coleta os dados a partir do domínio informado.</p>
-    {detectedUrl && <div className="detection-box supported"><strong>Endereço válido</strong><span>{detectedUrl.hostname}</span><small>A compatibilidade da fonte será validada pela API.</small></div>}
-  </>;
-  const storeFields = <>
-    <label htmlFor="store-name">Nome da loja<span className="required">Obrigatório</span></label>
-    <input id="store-name" value={storeName} onChange={(e) => setStoreName(e.target.value)} placeholder="Nome oficial da loja" required />
-    <label htmlFor="store-url">Link do site<span className="required">Obrigatório</span></label>
-    <input id="store-url" type="url" value={storeUrl} onChange={(e) => setStoreUrl(e.target.value)} placeholder="Cole o link oficial" required />
-    <p className="helper">Use uma URL completa começando com https://.</p>
+    {detectedUrl && <div className={`detection-box ${matchedStore ? "supported" : "unsupported"}`}><strong>{matchedStore ? "Loja reconhecida" : "Endereço válido"}</strong><span>{matchedStore ? matchedStore.key : detectedUrl.hostname}</span><small>{matchedStore ? "A fonte está no registry do crawler." : "A compatibilidade da fonte será validada pela API."}</small></div>}
+    {showImageOption && (
+      <label className="image-fetch-option" htmlFor="include-images">
+        <input
+          id="include-images"
+          type="checkbox"
+          checked={includeImages}
+          disabled={scrapeStatus === "loading"}
+          onChange={(event) => onIncludeImagesChange(event.target.checked)}
+        />
+        <span>
+          <strong>Buscar imagens do produto</strong>
+          <small>
+            {matchedStore?.image_fetch_cost === "high"
+              ? "Opcional — nesta loja a coleta de galeria pode ser mais lenta."
+              : "Extrai apenas as URLs da galeria (sem download binário no preview)."}
+          </small>
+        </span>
+      </label>
+    )}
   </>;
   return <div className="form-page">
-    <div className="breadcrumb"><span>Visão geral</span><span>/</span><span>{isProduct ? "Adicionar produto" : "Adicionar site por link"}</span></div>
+    <div className="breadcrumb"><span>Visão geral</span><span>/</span><span>Adicionar produto</span></div>
     <div className="form-layout">
-      <div className="form-intro"><p className="eyebrow">Novo registro</p><h1>{isProduct ? "Cole o link. Revise o produto." : "Adicione um site por link."}</h1><p>{isProduct ? "A API consulta a página oficial e prepara uma prévia para sua aprovação." : "Cole o link oficial do site para registrar uma nova fonte de preços."}</p><div className="form-rail"><span className="rail-line" /><span>{isProduct ? "01" : "02"}</span><span>{isProduct ? "Coletar e revisar" : "Link da fonte"}</span></div></div>
+      <div className="form-intro"><p className="eyebrow">Novo registro</p><h1>Cole o link. Revise o produto.</h1><p>A API consulta a página oficial e prepara uma prévia para sua aprovação.</p><div className="form-rail"><span className="rail-line" /><span>01</span><span>Coletar e revisar</span></div></div>
       <form className="data-form" onSubmit={onSubmit}>
-        <div className="form-card"><div className="form-card-heading"><span className="form-number">{isProduct ? "01" : "02"}</span><div><h2>{isProduct ? "Link do produto" : "Link do site"}</h2><p>{isProduct ? "O nome vem da página, nunca de um texto digitado manualmente." : "O link será revisado antes de entrar no monitoramento."}</p></div></div>{isProduct ? productFields : storeFields}</div>
-        {isProduct && scrapeStatus === "loading" && <div className="scrape-progress" role="status" aria-live="polite"><span className="progress-pulse" /><ShinyText text={progressMessage} speed={2} delay={0} color="#728589" shineColor="#ffffff" spread={120} direction="left" yoyo={false} pauseOnHover={false} disabled={false} /></div>}
-        <div className="form-footer"><span className="secure-note">A prévia não altera o catálogo canônico antes da sua aprovação.</span><button className="primary-button" type={isProduct && scrapeStatus === "ready" ? "button" : "submit"} onClick={isProduct && scrapeStatus === "ready" ? onRevealPreview : undefined} disabled={isProduct && scrapeStatus === "loading"}><Icon name={isProduct && scrapeStatus === "loading" ? "refresh" : isProduct && scrapeStatus === "ready" && previewVisible ? "chevron-down" : "arrow"} /> {isProduct && scrapeStatus === "loading" ? "Buscando produto" : isProduct && scrapeStatus === "ready" && previewVisible ? "Prévia exibida abaixo" : isProduct && scrapeStatus === "ready" ? "Ver prévia" : isProduct && scrapeStatus === "error" ? "Tentar novamente" : isProduct ? "Buscar produto" : "Enviar para revisão"}</button></div>
+        <div className="form-card"><div className="form-card-heading"><span className="form-number">01</span><div><h2>Link do produto</h2><p>O nome vem da página, nunca de um texto digitado manualmente.</p></div></div>{productFields}</div>
+        {scrapeStatus === "loading" && <div className="scrape-progress" role="status" aria-live="polite"><span className="progress-pulse" /><ShinyText text={progressMessage} speed={2} delay={0} color="#728589" shineColor="#ffffff" spread={120} direction="left" yoyo={false} pauseOnHover={false} disabled={false} /></div>}
+        <div className="form-footer"><span className="secure-note">A prévia não altera o catálogo canônico antes da sua aprovação.</span><button className="primary-button" type={scrapeStatus === "ready" ? "button" : "submit"} onClick={scrapeStatus === "ready" ? onRevealPreview : undefined} disabled={scrapeStatus === "loading"}><Icon name={scrapeStatus === "loading" ? "refresh" : scrapeStatus === "ready" && previewVisible ? "chevron-down" : "arrow"} /> {scrapeStatus === "loading" ? "Buscando produto" : scrapeStatus === "ready" && previewVisible ? "Prévia exibida abaixo" : scrapeStatus === "ready" ? "Ver prévia" : scrapeStatus === "error" ? "Tentar novamente" : "Buscar produto"}</button></div>
         {scrapeError && <p className="error-notice" role="alert">{scrapeError}{existingProductId && !duplicateProduct && <> <Link href={`/admin/produtos/${existingProductId}`}>Abrir produto cadastrado.</Link></>}</p>}
         {duplicateProduct && !scrapedProduct && <DuplicateProductNotice product={duplicateProduct} />}
         {notice && <p className="success-notice" role="status"><Icon name={approvedPreview ? "check" : "refresh"} /> {notice}</p>}
@@ -612,6 +655,12 @@ function ReviewPreview({ product, approved, onApprove, previewRef, importing, bl
             </div>
           )}
           <p>Confira os dados extraídos da página antes de aprovar.</p>
+          {(product.image_status === "error" || product.image_status === "omitted" || (product.image_status === "empty" && (product.images?.length ?? 0) === 0)) && (
+            <p className="review-image-warning" role="status">
+              Produto encontrado, mas não foi possível carregar a galeria
+              {product.image_error ? `: ${product.image_error}` : "."}
+            </p>
+          )}
         </div>
         <a className="source-link" href={product.url} target="_blank" rel="noreferrer">
           Abrir página <Icon name="external" />
@@ -667,20 +716,6 @@ function ReviewPreview({ product, approved, onApprove, previewRef, importing, bl
           </div>
 
           <div className="review-meta">
-            <span>
-              <b>Disponibilidade</b>
-              {product.availability === "in_stock"
-                ? "Em estoque"
-                : product.availability === "out_of_stock"
-                ? "Fora de estoque"
-                : "Não identificada"}
-            </span>
-            <span>
-              <b>Estoque</b>
-              {product.stockQuantity === null || product.stockQuantity === undefined
-                ? "Não exibido"
-                : `${product.stockQuantity} unidades`}
-            </span>
             <span>
               <b>Vendido por</b>
               {product.seller || "Não identificado"}

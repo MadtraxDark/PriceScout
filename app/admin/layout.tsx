@@ -18,28 +18,33 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
 
-    void authApi.me().then((identity) => {
-      if (!active) return;
-      if (!identity.is_admin) {
-        router.replace("/forbidden");
-        return;
-      }
-      setAccess("allowed");
-    }).catch((error: unknown) => {
-      if (!active) return;
-      if (error instanceof ApiError && error.status === 401) {
-        router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-        return;
-      }
-      if (error instanceof ApiError && error.status === 403) {
-        router.replace("/forbidden");
-        return;
-      }
-      setMessage(error instanceof Error ? error.message : "Não foi possível validar seu acesso.");
-      setAccess("error");
-    });
+    // Qualquer usuário autenticado tem acesso ao painel.
+    // is_admin não é verificado — o admin UI é auth-only.
+    void authApi
+      .me()
+      .then(() => {
+        if (!active) return;
+        setAccess("allowed");
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        if (error instanceof ApiError && error.status === 401) {
+          router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+          return;
+        }
+        if (error instanceof ApiError && error.status === 403) {
+          router.replace("/forbidden");
+          return;
+        }
+        setMessage(
+          error instanceof Error ? error.message : "Nao foi possivel validar seu acesso.",
+        );
+        setAccess("error");
+      });
 
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [attempt, pathname, router]);
 
   function retryAccess() {
@@ -49,11 +54,27 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }
 
   if (access === "checking") {
-    return <main className="product-admin-shell"><p className="eyebrow">Autenticação</p><h1>Validando acesso...</h1></main>;
+    return (
+      <main className="product-admin-shell">
+        <p className="eyebrow">Autenticacao</p>
+        <h1>Validando acesso...</h1>
+      </main>
+    );
   }
 
   if (access === "error") {
-    return <main className="product-admin-shell"><section className="empty-state"><h1>API indisponível</h1><p>{message}</p><button className="primary-button" type="button" onClick={retryAccess}>Tentar novamente</button></section></main>;
+    const isRateLimited = /limite|429|rate/i.test(message);
+    return (
+      <main className="product-admin-shell">
+        <section className="empty-state">
+          <h1>{isRateLimited ? "Aguarde um momento" : "Falha de autenticacao"}</h1>
+          <p>{message}</p>
+          <button className="primary-button" type="button" onClick={retryAccess}>
+            Tentar novamente
+          </button>
+        </section>
+      </main>
+    );
   }
 
   return children;

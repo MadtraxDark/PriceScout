@@ -8,7 +8,7 @@ import { catalogApi } from "@/utils/api/services";
 import { apiUrl } from "@/utils/api/client";
 import { getStoreDisplayName } from "@/utils/store-display";
 import { PriceSearchProgress, type StoreProgress } from "@/components/PriceSearchProgress";
-import type { CatalogProductImage, OtherStorePrice, OtherStoreProgressEvent, Product, ProductImage, TaxonomyItem } from "@/utils/api/contracts";
+import type { CatalogOffer, CatalogProductImage, OtherStorePrice, OtherStoreProgressEvent, Product, ProductImage, TaxonomyItem } from "@/utils/api/contracts";
 
 
 const fields: Array<{ key: keyof Product; label: string; type?: string }> = [
@@ -21,7 +21,7 @@ const fields: Array<{ key: keyof Product; label: string; type?: string }> = [
   { key: "seller", label: "Vendedor" }, { key: "shipping_from", label: "Envio a partir de" }, { key: "special_status", label: "Estado especial" },
   { key: "original_price", label: "Preço original", type: "number" }, { key: "pix_price", label: "Preço PIX", type: "number" }, { key: "pix_discount_percent", label: "Desconto PIX (%)", type: "number" },
   { key: "card_price", label: "Preço no cartão", type: "number" }, { key: "installments_quantity", label: "Quantidade de parcelas", type: "number" }, { key: "installment_amount", label: "Valor da parcela", type: "number" },
-  { key: "price_difference_pix_to_card", label: "Diferença PIX x cartão", type: "number" }, { key: "stock_quantity", label: "Estoque", type: "number" },
+  { key: "price_difference_pix_to_card", label: "Diferença PIX x cartão", type: "number" },
 */
 ];
 
@@ -31,10 +31,16 @@ function Icon({ name }: { name: "arrow" | "back" | "check" | "close" | "image" |
 }
 
 function toGalleryImage(image: CatalogProductImage): ProductImage {
+  const relative = image.display_url || image.optimized_image_url || null;
+  const absolute = relative
+    ? relative.startsWith("http://") || relative.startsWith("https://")
+      ? relative
+      : apiUrl(relative)
+    : image.original_url;
   return {
     id: image.image_id,
     name: "Imagem do produto",
-    image_url: image.optimized_image_url ? apiUrl(image.optimized_image_url) : image.original_url,
+    image_url: absolute,
     original_url: image.original_url,
     sort_order: image.position,
     is_main: image.is_main,
@@ -52,6 +58,199 @@ function resolvePrimaryImage(product: Product, gallery: ProductImage[]): Product
     ?? gallery.find((image) => image.id === product.primary_image_id && image.image_url)
     ?? gallery.find((image) => image.image_url)
     ?? null;
+}
+
+function offerPrice(offer: CatalogOffer): number | null {
+  for (const value of [offer.pix_price, offer.card_price, offer.original_price]) {
+    if (value != null && value > 0) return value;
+  }
+  return null;
+}
+
+function variantLabel(attributes: Record<string, string>): string {
+  const values = Object.values(attributes).filter(Boolean);
+  return values.length > 0 ? values.join(" / ") : "Oferta da variação principal";
+}
+
+function storeLabel(offer: CatalogOffer): string {
+  return offer.store?.name || getStoreDisplayName(offer.source, offer.store?.hostname);
+}
+
+function storeInitials(label: string): string {
+  return label.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "LO";
+}
+
+function sortOffers(left: CatalogOffer, right: CatalogOffer): number {
+  return (offerPrice(left) ?? Number.POSITIVE_INFINITY) - (offerPrice(right) ?? Number.POSITIVE_INFINITY);
+}
+
+function formatRelativePast(iso: string | null | undefined, nowMs: number): string | null {
+  if (!iso) return null;
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return null;
+  const deltaSec = Math.max(0, Math.floor((nowMs - then) / 1000));
+  if (deltaSec < 60) return "há menos de 1 min";
+  if (deltaSec < 3600) return `há ${Math.floor(deltaSec / 60)} min`;
+  if (deltaSec < 86400) return `há ${Math.floor(deltaSec / 3600)} h`;
+  return `há ${Math.floor(deltaSec / 86400)} d`;
+}
+
+function formatAbsoluteLocal(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function formatCountdown(expiresAtIso: string, nowMs: number): string {
+  const expires = Date.parse(expiresAtIso);
+  if (!Number.isFinite(expires)) return "—";
+  const remaining = Math.max(0, Math.floor((expires - nowMs) / 1000));
+  const hours = Math.floor(remaining / 3600);
+  const minutes = Math.floor((remaining % 3600) / 60);
+  const seconds = remaining % 60;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    return `${days}d ${pad(hours % 24)}:${pad(minutes)}:${pad(seconds)}`;
+  }
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+}
+
+function OfferMonitoringMeta({
+  offer,
+  onExpired,
+}: {
+  offer: CatalogOffer;
+  onExpired?: () => void;
+}) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const expiresAt = offer.promotion_commercially_active ? offer.promotion_expires_at : null;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!expiresAt) return;
+    const expires = Date.parse(expiresAt);
+    if (!Number.isFinite(expires)) return;
+    if (expires <= nowMs) onExpired?.();
+  }, [expiresAt, nowMs, onExpired]);
+
+  const lastChecked = formatRelativePast(offer.last_checked_at, nowMs);
+  const nextCheck = formatAbsoluteLocal(offer.next_check_at);
+  const remaining = expiresAt ? formatCountdown(expiresAt, nowMs) : null;
+  const expiredLocally = Boolean(expiresAt && Date.parse(expiresAt) <= nowMs);
+
+  return (
+    <div className="persisted-offer-monitoring">
+      {lastChecked && <span>Última verificação: {lastChecked}</span>}
+      {nextCheck && <span>Próxima verificação: {nextCheck}</span>}
+      {expiresAt && !expiredLocally && (
+        <span>Promoção termina em: {remaining}</span>
+      )}
+      {expiresAt && expiredLocally && (
+        <span>Promoção expirada — atualizando…</span>
+      )}
+    </div>
+  );
+}
+
+function PersistedOffersList({
+  product,
+  primaryImage,
+  money,
+  onSearch,
+  searching,
+  onRefreshOffers,
+}: {
+  product: Product;
+  primaryImage: ProductImage | null;
+  money: (value: number | null, currency: string) => string;
+  onSearch: () => void;
+  searching: boolean;
+  onRefreshOffers?: () => void;
+}) {
+  return (
+    <div className="persisted-offers">
+      {product.variants.map((variant) => {
+        const offers = [...variant.offers].sort(sortOffers);
+        return (
+          <section className="persisted-offer-variant" key={variant.id} aria-labelledby={`variant-offers-${variant.id}`}>
+            <div className="persisted-offer-variant-heading">
+              <div>
+                <p className="eyebrow">Variação</p>
+                <h3 id={`variant-offers-${variant.id}`}>{variantLabel(variant.attributes)}</h3>
+              </div>
+              <span>{offers.length} {offers.length === 1 ? "oferta" : "ofertas"}</span>
+            </div>
+            {offers.length === 0 ? (
+              <div className="persisted-offers-empty">
+                <p>Nenhuma oferta encontrada para esta variação.</p>
+                <button className="outline-button" type="button" onClick={onSearch} disabled={searching}>
+                  {searching ? "Buscando preços..." : "Buscar preços em outras lojas"}
+                </button>
+              </div>
+            ) : (
+              <div className="persisted-offer-list">
+                {offers.map((offer, index) => {
+                  const price = offerPrice(offer);
+                  const isBest = index === 0 && price != null;
+                  const label = storeLabel(offer);
+                  const showPromoPrice = Boolean(offer.promotion_commercially_active);
+                  return (
+                    <article className={`persisted-offer-row ${isBest ? "is-best" : ""}`} key={offer.id}>
+                      <div className="persisted-offer-image">
+                        <ImageWithState src={offer.image_url || primaryImage?.image_url || ""} alt={product.name} />
+                      </div>
+                      <div className="persisted-offer-main">
+                        <div className="persisted-offer-price-line">
+                          {isBest && <span className="persisted-offer-best">Menor preço</span>}
+                          <strong>{money(price, offer.currency)}</strong>
+                          {offer.pix_price != null && <span>à vista no Pix</span>}
+                          {showPromoPrice && <span>promoção temporária</span>}
+                        </div>
+                        <div className="persisted-offer-conditions">
+                          {offer.original_price != null && offer.original_price !== price && <span>De {money(offer.original_price, offer.currency)}</span>}
+                          {offer.card_price != null && offer.card_price !== price && <span>Cartão: {money(offer.card_price, offer.currency)}</span>}
+                          {offer.installments != null && offer.installment_value != null && <span>{offer.installments}x de {money(offer.installment_value, offer.currency)}{offer.interest_free === true ? " sem juros" : ""}</span>}
+                        </div>
+                        <div className="persisted-offer-meta">
+                          {offer.discount_percent != null && offer.discount_percent > 0 && <span>Desconto de {offer.discount_percent.toFixed(0)}%</span>}
+                          {offer.seller && <span>Vendido por {offer.seller}</span>}
+                          {offer.delivery_responsible && offer.delivery_responsible.toLowerCase() !== (offer.seller || "").toLowerCase() && <span>Entrega: {offer.delivery_responsible}</span>}
+                          {offer.available === false && <span>Indisponível</span>}
+                        </div>
+                        <OfferMonitoringMeta offer={offer} onExpired={onRefreshOffers} />
+                      </div>
+                      <div className="persisted-offer-store">
+                        <div className="persisted-store-identity">
+                          <span className="persisted-store-mark" aria-hidden="true">{storeInitials(label)}</span>
+                          <strong>{label}</strong>
+                        </div>
+                        {offer.canonical_url && <a className="store-offer-link" href={offer.canonical_url} target="_blank" rel="noopener noreferrer">Ir à loja <Icon name="arrow" /></a>}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        );
+      })}
+      {product.variants.length === 0 && (
+        <div className="persisted-offers-empty">
+          <p>Nenhuma oferta encontrada para esta variação.</p>
+          <button className="outline-button" type="button" onClick={onSearch} disabled={searching}>Buscar preços em outras lojas</button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function ProductAdminPage({ params }: { params: Promise<{ id: string }> }) {
@@ -74,10 +273,11 @@ export default function ProductAdminPage({ params }: { params: Promise<{ id: str
   const [exitPrompt, setExitPrompt] = useState(false);
   const [newImageUrl, setNewImageUrl] = useState("");
   const [addingImage, setAddingImage] = useState(false);
-  const [otherStorePrices, setOtherStorePrices] = useState<OtherStorePrice[] | null>(null);
+  const [otherStorePrices, setOtherStorePrices] = useState<OtherStorePrice[]>([]);
   const [searchingOtherStorePrices, setSearchingOtherStorePrices] = useState(false);
   const [otherStorePricesError, setOtherStorePricesError] = useState("");
   const [storeProgress, setStoreProgress] = useState<StoreProgress[]>([]);
+  const [searchPhase, setSearchPhase] = useState("");
   const searchAbortRef = useRef<AbortController | null>(null);
 
   async function load(productId: string) {
@@ -155,12 +355,16 @@ export default function ProductAdminPage({ params }: { params: Promise<{ id: str
   async function addImage(event: React.FormEvent) { event.preventDefault(); if (!newImageUrl.trim()) return; setAddingImage(true); try { const result = await catalogApi.addProductImage(id, newImageUrl.trim()); setImages((current) => [...current, result.image]); setNewImageUrl(""); setNotice("Imagem adicionada à galeria."); } catch (addError) { setError(addError instanceof Error ? addError.message : "Não foi possível adicionar a imagem."); } finally { setAddingImage(false); } }
   async function searchOtherStorePrices() {
     if (!id || searchingOtherStorePrices) return;
-    setSearchingOtherStorePrices(true); setOtherStorePricesError(""); setOtherStorePrices(null); setStoreProgress([]);
+    setSearchingOtherStorePrices(true); setOtherStorePricesError(""); setOtherStorePrices([]); setStoreProgress([]); setSearchPhase("Atualizando ofertas existentes");
     searchAbortRef.current?.abort();
     const controller = new AbortController();
     searchAbortRef.current = controller;
     try {
-      const result = await catalogApi.streamOtherStorePrices(id, (event: OtherStoreProgressEvent) => {
+      await catalogApi.streamOtherStorePrices(id, (event: OtherStoreProgressEvent) => {
+        if (event.type === "search_progress") {
+          setSearchPhase(event.message);
+          return;
+        }
         if (!(["store_progress", "store_result"] as string[]).includes(event.type) || !event.store) return;
         const storeKey = event.store;
         setStoreProgress((current) => {
@@ -169,7 +373,8 @@ export default function ProductAdminPage({ params }: { params: Promise<{ id: str
           return existing ? current.map((item) => item.store === storeKey ? next : item) : [...current, next];
         });
       }, controller.signal);
-      setOtherStorePrices(result.prices ?? []);
+      await load(id);
+      setNotice("Ofertas persistidas atualizadas após a busca.");
     } catch (searchError) {
       setOtherStorePricesError(searchError instanceof Error ? searchError.message : "Não foi possível buscar preços em outras lojas.");
     } finally { setSearchingOtherStorePrices(false); }
@@ -183,13 +388,22 @@ export default function ProductAdminPage({ params }: { params: Promise<{ id: str
   return <main className="product-admin-shell"><header className="product-admin-header"><div><Link className="back-link" href="/admin"><Icon name="back" /> Catálogo</Link><p className="eyebrow">Área central do produto</p><h1>{product.name}</h1><p className="product-id">ID interno <code>{product.id}</code></p></div><div className="product-admin-actions"><button className="danger-button" type="button" onClick={() => setProductDeletePrompt(true)} disabled={productDeleteProcessing}><Icon name="trash" /> Excluir produto</button><button className="outline-button" type="button" onClick={() => void searchOtherStorePrices()} disabled={searchingOtherStorePrices}>{searchingOtherStorePrices ? "Buscando preços..." : "Buscar preços em outras lojas"}</button><button className="outline-button product-cancel-button" type="button" onClick={requestExit}>Cancelar</button><button className="primary-button" type="button" onClick={() => void save()} disabled={saving}><Icon name={saving ? "refresh" : "check"} /> {saving ? "Salvando..." : "Salvar alterações"}</button></div></header>{productDeletePrompt && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!productDeleteProcessing && event.target === event.currentTarget) setProductDeletePrompt(false); }}><section className="confirm-modal product-delete-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-product-title" aria-describedby="delete-product-description"><div className="confirm-modal-preview product-delete-preview">{primary ? <ImageWithState src={primary.image_url} alt="" /> : <div className="product-delete-image-empty"><Icon name="image" /><span>Sem imagem de capa</span></div>}</div><div className="confirm-modal-content"><div className="confirm-modal-heading"><div><p className="eyebrow">Ação destrutiva</p><h2 id="delete-product-title">Excluir produto?</h2></div><button className="icon-action" type="button" onClick={() => setProductDeletePrompt(false)} disabled={productDeleteProcessing} aria-label="Fechar"><Icon name="close" /></button></div><div className="product-delete-identity"><strong>{product.name}</strong><span><b>Data de criação</b>{createdAtLabel}</span></div><p id="delete-product-description">Tem certeza de que deseja excluir este produto? A galeria de imagens e o histórico de preços relacionado também serão removidos.</p><div className="confirm-modal-actions"><button className="outline-button" type="button" onClick={() => setProductDeletePrompt(false)} disabled={productDeleteProcessing}>Cancelar</button><button className="danger-button" type="button" onClick={() => void confirmDeleteProduct()} disabled={productDeleteProcessing}>{productDeleteProcessing ? <><span className="loading-spinner" aria-hidden="true" /> Excluindo produto...</> : "Excluir produto"}</button></div></div></section></div>}{exitPrompt && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setExitPrompt(false); }}><section className="confirm-modal exit-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="exit-product-title" aria-describedby="exit-product-description"><div className="confirm-modal-content"><div className="confirm-modal-heading"><div><p className="eyebrow">Alterações pendentes</p><h2 id="exit-product-title">Sair sem salvar?</h2></div><button className="icon-action" type="button" onClick={() => setExitPrompt(false)} aria-label="Fechar"><Icon name="close" /></button></div><p id="exit-product-description">As alterações feitas nesta edição serão descartadas e você voltará para a lista de Produtos.</p><div className="confirm-modal-actions"><button className="outline-button" type="button" onClick={() => setExitPrompt(false)}>Continuar editando</button><button className="danger-button" type="button" onClick={exitWithoutSaving}>Sair sem salvar</button></div></div></section></div>}{error && <p className="error-notice" role="alert">{error}</p>}{notice && <p className="success-notice" role="status">{notice}</p>}<section className="other-store-price-panel">
         <div className="other-store-price-heading">
           <div>
-            <p className="eyebrow">Comparação ao vivo</p>
-            <h2>Preços em outras lojas</h2>
+            <p className="eyebrow">Ofertas persistidas</p>
+            <h2>Compare onde comprar</h2>
           </div>
+          <button className="outline-button" type="button" onClick={() => void searchOtherStorePrices()} disabled={searchingOtherStorePrices}>{searchingOtherStorePrices ? "Buscando preços..." : "Buscar preços em outras lojas"}</button>
         </div>
         {otherStorePricesError && <p className="error-notice" role="alert">{otherStorePricesError}</p>}
-        {storeProgress.length > 0 && <PriceSearchProgress stores={storeProgress} active={searchingOtherStorePrices} />}
-        {otherStorePrices && (
+        {storeProgress.length > 0 && <PriceSearchProgress stores={storeProgress} active={searchingOtherStorePrices} phase={searchPhase} />}
+        <PersistedOffersList
+          product={product}
+          primaryImage={primary}
+          money={money}
+          onSearch={() => void searchOtherStorePrices()}
+          searching={searchingOtherStorePrices}
+          onRefreshOffers={() => { if (id) void load(id); }}
+        />
+        {otherStorePrices && false && (
           otherStorePrices.length === 0 ? (
             <p className="empty-state">Nenhum preço do mesmo produto foi encontrado.</p>
           ) : (
@@ -198,8 +412,6 @@ export default function ProductAdminPage({ params }: { params: Promise<{ id: str
                 <article key={price.storeId + (price.url || "") + price.currency} className="store-offer-card">
                   <div className="store-offer-header">
                     <strong className="store-offer-name">{price.displayName || getStoreDisplayName(price.storeId, price.url)}</strong>
-                    {price.availability === "in_stock" && <span className="store-offer-badge store-offer-badge--available">Em estoque</span>}
-                    {price.availability === "out_of_stock" && <span className="store-offer-badge store-offer-badge--unavailable">Fora de estoque</span>}
                   </div>
                   <dl className="store-offer-prices">
                     <div>
@@ -251,7 +463,7 @@ export default function ProductAdminPage({ params }: { params: Promise<{ id: str
             </div>
           )
         )}
-      </section><div className="product-admin-grid"><section className="product-admin-main"><AdminSection title="Informações gerais" eyebrow="01"><div className="product-fields">{fields.slice(0, 6).map((field) => <label key={field.key}>{field.label}<input type={field.type || "text"} value={draft[field.key] == null ? "" : String(draft[field.key])} onChange={(event) => update(field.key, event.target.value)} /></label>)}</div></AdminSection><AdminSection title="Taxonomia" eyebrow="02"><div className="taxonomy-path">{taxonomy.length === 0 ? <span>Taxonomia não cadastrada</span> : taxonomy.map((item) => <span key={item.category?.id || item.level}>{item.category?.name || "Categoria não identificada"}</span>)}</div></AdminSection><AdminSection title="Imagens do produto" eyebrow="03"><form className="image-add-form" onSubmit={addImage}><label>Adicionar imagem por URL<input type="url" value={newImageUrl} onChange={(event) => setNewImageUrl(event.target.value)} placeholder="Cole uma URL HTTPS de imagem" required /></label><button className="outline-button" type="submit" disabled={addingImage}><Icon name="plus" /> {addingImage ? "Adicionando..." : "Adicionar imagem"}</button></form>{images.length === 0 ? <div className="image-empty"><Icon name="image" /><p>Nenhuma imagem vinculada a este produto.</p></div> : <div className="product-gallery">{images.map((image, index) => <article className={`managed-image ${primary?.id === image.id ? "is-primary" : ""}`} key={image.id}><button className="managed-image-preview" type="button" onClick={() => setLightbox(image)}><ImageWithState src={image.image_url} alt={product.name} /></button><div className="managed-image-meta"><div className="managed-image-heading"><span className="image-order">{String(index + 1).padStart(2, "0")}</span><strong>{primary?.id === image.id ? <><Icon name="check" /> Imagem principal</> : "Imagem vinculada"}</strong></div><div className="image-actions"><button className="primary-image-action" type="button" onClick={() => void arrange(images.map((item) => item.id), image.id)} disabled={primary?.id === image.id}>Definir como principal</button><button className="icon-action" type="button" onClick={() => void arrange(images.map((item) => item.id).toSpliced(index, 1).toSpliced(index - 1, 0, image.id))} aria-label="Mover para cima" disabled={index === 0}><Icon name="up" /></button><button className="icon-action" type="button" onClick={() => void arrange(images.map((item) => item.id).toSpliced(index, 1).toSpliced(index + 1, 0, image.id))} aria-label="Mover para baixo" disabled={index === images.length - 1}><Icon name="down" /></button><button className="icon-action danger-action" type="button" onClick={() => void deleteImage(image)} aria-label="Excluir imagem"><Icon name="trash" /></button></div></div></article>)}</div>}</AdminSection></section><aside className="product-admin-side"><AdminSection title="Imagem principal" eyebrow="Capa do produto"><div className="primary-image-panel">{primary ? <ImageWithState key={primary.image_url} src={primary.image_url} alt={product.name} /> : <div className="image-empty"><Icon name="image" /><span>Sem capa definida</span></div>}<p>A capa é usada automaticamente no Catálogo e nas futuras superfícies da loja.</p></div></AdminSection><AdminSection title="Disponibilidade e estoque" eyebrow="04"><label className="field-label">Disponibilidade<select value={String(draft.availability || "unknown")} onChange={(event) => update("availability", event.target.value)}><option value="in_stock">Em estoque</option><option value="out_of_stock">Fora de estoque</option><option value="unknown">Não identificada</option></select></label><label className="field-label">Estoque<input type="number" value={draft.stock_quantity == null ? "" : String(draft.stock_quantity)} onChange={(event) => update("stock_quantity", event.target.value)} /></label></AdminSection><AdminSection title="Preços e condições" eyebrow="05"><div className="product-fields compact">{fields.slice(6, 14).map((field) => <label key={field.key}>{field.label}<input type={field.type || "text"} value={draft[field.key] == null ? "" : String(draft[field.key])} onChange={(event) => update(field.key, event.target.value)} /></label>)}</div></AdminSection><AdminSection title="Outras informações" eyebrow="06"><dl className="product-facts"><div><dt>Origem</dt><dd>{getStoreDisplayName(product.source)}</dd></div><div><dt>ID externo</dt><dd>{product.external_product_id}</dd></div><div><dt>Loja</dt><dd>{product.store?.name ? getStoreDisplayName(product.store.name) : "Não identificada"}</dd></div></dl></AdminSection></aside></div>{deleteCandidate && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!deleteProcessing && event.target === event.currentTarget) setDeleteCandidate(null); }}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-image-title" aria-describedby="delete-image-description"><div className="confirm-modal-preview"><ImageWithState src={deleteCandidate.image_url} alt="" /></div><div className="confirm-modal-content"><div className="confirm-modal-heading"><div><p className="eyebrow">Ação destrutiva</p><h2 id="delete-image-title">Excluir imagem?</h2></div><button className="icon-action" type="button" onClick={() => setDeleteCandidate(null)} disabled={deleteProcessing} aria-label="Fechar"><Icon name="close" /></button></div><p className="confirm-modal-image-name">{deleteCandidate.name || "Imagem vinculada"}</p><p id="delete-image-description">Esta imagem será removida da galeria do produto. Essa ação não pode ser desfeita.</p>{deleteError && <p className="error-notice" role="alert">{deleteError}</p>}<div className="confirm-modal-actions"><button className="outline-button" type="button" onClick={() => setDeleteCandidate(null)} disabled={deleteProcessing}>Cancelar</button><button className="danger-button" type="button" onClick={() => void confirmDeleteImage()} disabled={deleteProcessing}>{deleteProcessing ? <><span className="loading-spinner" aria-hidden="true" /> Excluindo imagem...</> : "Excluir imagem"}</button></div></div></section></div>}<ImageViewer key={lightbox?.id || "closed"} images={images.map((image) => ({ id: image.id, src: image.image_url, alt: product.name }))} initialIndex={Math.max(0, images.findIndex((image) => image.id === lightbox?.id))} title={product.name} open={Boolean(lightbox)} onClose={() => setLightbox(null)} /></main>;
+      </section><div className="product-admin-grid"><section className="product-admin-main"><AdminSection title="Informações gerais" eyebrow="01"><div className="product-fields">{fields.slice(0, 6).map((field) => <label key={field.key}>{field.label}<input type={field.type || "text"} value={draft[field.key] == null ? "" : String(draft[field.key])} onChange={(event) => update(field.key, event.target.value)} /></label>)}</div></AdminSection><AdminSection title="Taxonomia" eyebrow="02"><div className="taxonomy-path">{taxonomy.length === 0 ? <span>Taxonomia não cadastrada</span> : taxonomy.map((item) => <span key={item.category?.id || item.level}>{item.category?.name || "Categoria não identificada"}</span>)}</div></AdminSection><AdminSection title="Imagens do produto" eyebrow="03"><form className="image-add-form" onSubmit={addImage}><label>Adicionar imagem por URL<input type="url" value={newImageUrl} onChange={(event) => setNewImageUrl(event.target.value)} placeholder="Cole uma URL HTTPS de imagem" required /></label><button className="outline-button" type="submit" disabled={addingImage}><Icon name="plus" /> {addingImage ? "Adicionando..." : "Adicionar imagem"}</button></form>{images.length === 0 ? <div className="image-empty"><Icon name="image" /><p>Nenhuma imagem vinculada a este produto.</p></div> : <div className="product-gallery">{images.map((image, index) => <article className={`managed-image ${primary?.id === image.id ? "is-primary" : ""}`} key={image.id}><button className="managed-image-preview" type="button" onClick={() => setLightbox(image)}><ImageWithState src={image.image_url} alt={product.name} /></button><div className="managed-image-meta"><div className="managed-image-heading"><span className="image-order">{String(index + 1).padStart(2, "0")}</span><strong>{primary?.id === image.id ? <><Icon name="check" /> Imagem principal</> : "Imagem vinculada"}</strong></div><div className="image-actions"><button className="primary-image-action" type="button" onClick={() => void arrange(images.map((item) => item.id), image.id)} disabled={primary?.id === image.id}>Definir como principal</button><button className="icon-action" type="button" onClick={() => void arrange(images.map((item) => item.id).toSpliced(index, 1).toSpliced(index - 1, 0, image.id))} aria-label="Mover para cima" disabled={index === 0}><Icon name="up" /></button><button className="icon-action" type="button" onClick={() => void arrange(images.map((item) => item.id).toSpliced(index, 1).toSpliced(index + 1, 0, image.id))} aria-label="Mover para baixo" disabled={index === images.length - 1}><Icon name="down" /></button><button className="icon-action danger-action" type="button" onClick={() => void deleteImage(image)} aria-label="Excluir imagem"><Icon name="trash" /></button></div></div></article>)}</div>}</AdminSection></section><aside className="product-admin-side"><AdminSection title="Imagem principal" eyebrow="Capa do produto"><div className="primary-image-panel">{primary ? <ImageWithState key={primary.image_url} src={primary.image_url} alt={product.name} /> : <div className="image-empty"><Icon name="image" /><span>Sem capa definida</span></div>}<p>A capa é usada automaticamente no Catálogo e nas futuras superfícies da loja.</p></div></AdminSection><AdminSection title="Preços e condições" eyebrow="05"><div className="product-fields compact">{fields.slice(6, 14).map((field) => <label key={field.key}>{field.label}<input type={field.type || "text"} value={draft[field.key] == null ? "" : String(draft[field.key])} onChange={(event) => update(field.key, event.target.value)} /></label>)}</div></AdminSection><AdminSection title="Outras informações" eyebrow="06"><dl className="product-facts"><div><dt>Origem</dt><dd>{getStoreDisplayName(product.source)}</dd></div><div><dt>ID externo</dt><dd>{product.external_product_id}</dd></div><div><dt>Loja</dt><dd>{product.store?.name ? getStoreDisplayName(product.store.name) : "Não identificada"}</dd></div></dl></AdminSection></aside></div>{deleteCandidate && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!deleteProcessing && event.target === event.currentTarget) setDeleteCandidate(null); }}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-image-title" aria-describedby="delete-image-description"><div className="confirm-modal-preview"><ImageWithState src={deleteCandidate.image_url} alt="" /></div><div className="confirm-modal-content"><div className="confirm-modal-heading"><div><p className="eyebrow">Ação destrutiva</p><h2 id="delete-image-title">Excluir imagem?</h2></div><button className="icon-action" type="button" onClick={() => setDeleteCandidate(null)} disabled={deleteProcessing} aria-label="Fechar"><Icon name="close" /></button></div><p className="confirm-modal-image-name">{deleteCandidate.name || "Imagem vinculada"}</p><p id="delete-image-description">Esta imagem será removida da galeria do produto. Essa ação não pode ser desfeita.</p>{deleteError && <p className="error-notice" role="alert">{deleteError}</p>}<div className="confirm-modal-actions"><button className="outline-button" type="button" onClick={() => setDeleteCandidate(null)} disabled={deleteProcessing}>Cancelar</button><button className="danger-button" type="button" onClick={() => void confirmDeleteImage()} disabled={deleteProcessing}>{deleteProcessing ? <><span className="loading-spinner" aria-hidden="true" /> Excluindo imagem...</> : "Excluir imagem"}</button></div></div></section></div>}<ImageViewer key={lightbox?.id || "closed"} images={images.map((image) => ({ id: image.id, src: image.image_url, alt: product.name }))} initialIndex={Math.max(0, images.findIndex((image) => image.id === lightbox?.id))} title={product.name} open={Boolean(lightbox)} onClose={() => setLightbox(null)} /></main>;
 }
 
 function AdminSection({ title, eyebrow, children }: { title: string; eyebrow: string; children: React.ReactNode }) { return <section className="admin-section"><div className="admin-section-heading"><span>{eyebrow}</span><h2>{title}</h2></div>{children}</section>; }

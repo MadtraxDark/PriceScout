@@ -21,30 +21,63 @@ npm run dev
 
 A interface fica disponível em `http://localhost:3000`. A API precisa permitir essa origem no CORS e aceitar credenciais quando a autenticação usar cookie HTTP-only.
 
-## Camada da API
+## Integração com ScoutApiV2
 
-- `utils/api/client.ts`: URL base, serialização, cookies, parsing e erros HTTP.
-- `utils/api/services.ts`: operações por domínio consumidas pelas telas.
-- `utils/api/contracts.ts`: contratos TypeScript das respostas e payloads.
+Este frontend consome exclusivamente o **ScoutApiV2** (FastAPI). Não há mocks, dados fabricados ou caminhos legados `/api/v1/`.
 
-`catalogApi.searchOtherStorePrices` consome `POST /api/v1/catalog/products/{id}/other-store-prices` e preserva todas as ofertas válidas retornadas em `prices`. A camada aceita apenas aliases equivalentes de serialização (`originalPrice`/`original_price`, `pixPrice`/`pix_price` e `cardPrice`/`card_price`); ela não transforma uma resposta vazia em sucesso nem descarta uma resposta válida por causa de campos comerciais opcionais. O estado vazio exibido pela página significa que a API realmente retornou `prices: []`.
+### Autenticação
 
-Componentes e páginas não devem chamar `fetch` diretamente nem conhecer banco, storage ou provedores externos. Imagens devem usar URLs retornadas pela API.
+O fluxo é OAuth via Google gerenciado pelo ScoutApiV2:
 
-## Contrato esperado da FastAPI
+1. `GET /auth/google` → retorna `{authorization_url}` → redireciona o browser
+2. Backend faz o callback e redireciona para `AUTH_FRONTEND_SUCCESS_URL#access_token=...`
+3. `app/auth/callback/page.tsx` lê o token do fragment, armazena em memória via `setAccessToken`
+4. `GET /auth/me` confirma a identidade (Bearer automático pelo cliente)
+5. Refresh via cookie HttpOnly `scout_refresh_token` — single-flight no `apiRequest`
 
-- `GET /auth/sign-in?next=...`
-- `GET /auth/me`
-- `POST /auth/sign-out`
-- `GET|POST /catalog/stores`
-- `GET /catalog/products`
-- `POST /catalog/products/preview`
-- `POST /catalog/products/import`
-- `GET|PATCH /catalog/products/{id}`
-- `POST|PATCH|DELETE /catalog/products/{id}/images`
-- `POST /catalog/products/{id}/other-store-prices`
+**O access token nunca é armazenado em `localStorage` ou `sessionStorage`.**
 
-O endpoint de importação recebe a prévia aprovada e executa toda a operação no servidor de forma consistente. O frontend não coordena persistência, taxonomia ou arquivos separadamente.
+### Camada da API
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `utils/api/auth-token.ts` | `getAccessToken` / `setAccessToken` / `clearAccessToken` (memória) |
+| `utils/api/client.ts` | URL base, Bearer, single-flight refresh, `ApiError` com `code`/`retryable` |
+| `utils/api/contracts.ts` | Tipos ScoutApiV2 (`ProductView`, `MatchHit`, `StoreInfo`, etc.) + tipos UI |
+| `utils/api/services.ts` | `authApi` + `catalogApi` — todo acesso à API passa por aqui |
+
+Componentes e páginas não devem chamar `fetch` diretamente nem conhecer banco, storage ou provedores externos.
+
+### Endpoints consumidos (ScoutApiV2)
+
+| Método | Endpoint | Uso |
+|---|---|---|
+| GET | `/auth/google` | Inicia OAuth |
+| GET | `/auth/me` | Confirma sessão |
+| POST | `/auth/refresh` | Renova token (cookie) |
+| POST | `/auth/logout` | Encerra sessão |
+| GET | `/products` | Listagem de produtos |
+| GET | `/products/{id}` | Produto individual |
+| POST | `/products` | Importar produto do crawl |
+| PATCH | `/products/{id}` | Editar título/marca/modelo/categoria |
+| DELETE | `/products/{id}` | Excluir produto |
+| POST | `/crawl` | Preview antes de importar |
+| POST | `/match` | Busca de preços (não-streaming) |
+| POST | `/match/stream` | Busca de preços via SSE |
+| POST | `/offers/refresh` | Atualizar ofertas persistidas |
+| GET | `/stores` | Lojas disponíveis (somente leitura) |
+| GET | `/health` | Health check |
+
+### Limitações desta versão
+
+- **Imagens**: gerenciamento de galeria não suportado — ScoutApiV2 não armazena imagens de produto.
+- **Lojas**: somente leitura — gerenciadas pelo registry interno da API.
+- **Thumbnails**: cartões de produto sem miniatura (sem campo `image_url` em `ProductView`).
+- **Decimais**: preços retornados como strings JSON; convertidos para `number` apenas para exibição via `parseMoney`.
+
+## Contrato legado (removido)
+
+Os caminhos `/api/v1/catalog/**`, `/api/v1/auth/**` e métodos `login/signup/magic-link/recover/reset` foram removidos. Toda integração usa exclusivamente os endpoints acima.
 
 ## Validação
 

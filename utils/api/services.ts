@@ -1,17 +1,41 @@
-import { api, apiUrl, hasApiConfiguration } from "@/utils/api/client";
+import { api, ApiError, apiUrl, hasApiConfiguration } from "@/utils/api/client";
+import { clearAccessToken, getAccessToken, setAccessToken } from "@/utils/api/auth-token";
+import { getStoreDisplayName } from "@/utils/store-display";
 import type {
+  AuthSession,
+  CatalogOffer,
+  CatalogOverview,
   CatalogProduct,
   CatalogProductImage,
+  CatalogProductVariant,
   CatalogStore,
-  CatalogOverview,
-  StoreMarketOption,
-  Product,
-  ProductImage,
-  ProductPreview,
-  ProductPreviewResponse,
+  MatchHit,
+  MatchRequest,
+  MatchResponse,
+  OfferRefreshRequest,
+  OfferRefreshResponse,
   OtherStorePricesResponse,
   OtherStoreProgressEvent,
+  OtherStorePrice,
+  ApiProductImageListResponse,
+  ApiProductImageView,
+  ProductImage,
+  ProductListResponse,
+  ProductPriceItem,
+  ProductPreview,
+  ProductPreviewResponse,
+  ProductRegisterRequest,
+  ProductRegisterResponse,
+  ProductView,
+  PublicUser,
+  StoreInfo,
+  StoreMarketOption,
 } from "@/utils/api/contracts";
+import { parseMoney } from "@/utils/api/contracts";
+
+// =============================================================================
+// Tipos exportados para as páginas
+// =============================================================================
 
 export interface AuthUserResponse {
   user: {
@@ -19,226 +43,780 @@ export interface AuthUserResponse {
     name: string | null;
     email: string | null;
   };
+  /** Sempre false — admin UI é auth-only. Nunca use is_admin || true. */
   is_admin: boolean;
 }
 
+/** Mantido para compatibilidade com imports existentes. */
 export interface AuthSessionData {
   success: boolean;
   access_token: string;
   refresh_token: string;
   token_type: string;
   expires_in: number;
-  expires_at?: number | null;
-  user: {
-    id: string;
-    email: string;
-    name?: string | null;
-    avatar_url?: string | null;
-    role?: string;
-  };
+  user: { id: string; email: string; name?: string | null };
   error?: string | null;
 }
 
+// =============================================================================
+// Mappers — ProductView → CatalogProduct
+// =============================================================================
+
+function listingToCatalogOffer(
+  listing: ProductView["listings"][number],
+  productId: string,
+  index: number,
+): CatalogOffer {
+  const toNumber = (value: string | number | null | undefined): number | null => {
+    if (value == null || value === "") return null;
+    const parsed = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const price = toNumber(listing.price);
+  const pix = toNumber(listing.pix_price);
+  const original = toNumber(listing.original_price);
+  const promoActive = Boolean(listing.promotion_commercially_active);
+  return {
+    id: listing.id ?? `${productId}-listing-${index}`,
+    catalog_product_variant_id: productId,
+    store_id: listing.store,
+    source: listing.store,
+    external_product_id: listing.product_id,
+    canonical_url: listing.canonical_url,
+    seller: listing.seller ?? null,
+    delivery_responsible: null,
+    original_price: original,
+    pix_price: pix,
+    card_price: price,
+    discount_percent: null,
+    installments: null,
+    installment_value: null,
+    interest_free: null,
+    image_url: null,
+    currency: listing.currency || "BRL",
+    country: listing.country,
+    market: listing.country,
+    store: { id: listing.store, name: listing.store, hostname: "" },
+    history: [],
+    last_checked_at: listing.last_checked_at ?? null,
+    next_check_at: listing.next_check_at ?? null,
+    promotion_expires_at: promoActive ? (listing.promotion_expires_at ?? null) : null,
+    promotion_status: listing.promotion_status ?? null,
+    promotion_commercially_active: promoActive,
+    available: listing.available ?? null,
+  };
+}
+
+function apiImageToCatalogImage(view: ApiProductImageView): CatalogProductImage {
+  const display = view.display_url || view.optimized_url || view.original_url;
+  return {
+    image_id: view.image_id,
+    product_id: view.product_id,
+    original_url: view.source_url,
+    optimized_image_url: display,
+    display_url: display,
+    position: view.position,
+    is_main: view.is_main,
+    status: view.original_status,
+    original_status: view.original_status,
+    optimized_status: view.optimized_status,
+    error: view.optimized_error,
+  };
+}
+
+function productViewToCatalogProduct(
+  view: ProductView,
+  gallery: CatalogProductImage[] = [],
+): CatalogProduct {
+  const categoryAttr = view.attributes?.category;
+  const category = typeof categoryAttr === "string" ? categoryAttr : null;
+
+  const offers: CatalogOffer[] = view.listings.map((listing, idx) =>
+    listingToCatalogOffer(listing, view.id, idx),
+  );
+
+  const variant: CatalogProductVariant = {
+    id: view.id,
+    catalog_product_id: view.id,
+    attributes: Object.fromEntries(
+      Object.entries(view.attributes ?? {})
+        .filter(([, v]) => v !== null && v !== undefined && v !== "")
+        .map(([k, v]) => [k, String(v)]),
+    ),
+    variant_fingerprint: view.variant_key ?? "",
+    identity_status: "confirmed",
+    offers,
+  };
+
+  const firstListing = view.listings[0] ?? null;
+  const mainImage = gallery.find((image) => image.is_main) ?? gallery[0] ?? null;
+  const mainUrl = mainImage?.display_url || mainImage?.optimized_image_url || null;
+
+  return {
+    id: view.id,
+    canonical_name: view.title,
+    brand: view.brand,
+    model: view.model,
+    category,
+    identity_attributes: view.attributes ?? {},
+    identity_status: "confirmed",
+    variants: [variant],
+    images: gallery,
+    created_at: view.created_at,
+    updated_at: view.updated_at,
+    name: view.title,
+    product_url: firstListing?.canonical_url ?? "",
+    source: firstListing?.store ?? "",
+    external_product_id: firstListing?.product_id ?? "",
+    primary_image_url: mainUrl ? apiUrl(mainUrl) : null,
+    primary_image_id: mainImage?.image_id ?? null,
+    store: firstListing ? { name: firstListing.store, hostname: "" } : null,
+  };
+}
+
+function storeInfoToCatalogStore(store: StoreInfo): CatalogStore {
+  return {
+    id: store.key,
+    name: getStoreDisplayName(store.key) || store.key,
+    hostname: store.domains[0] ?? "",
+    url: store.domains[0] ? `https://${store.domains[0]}` : `#${store.key}`,
+    country: store.country,
+    currency: store.currency,
+    logo_svg: null,
+    productCount: 0,
+    updated_at: new Date().toISOString(),
+    domains: store.domains,
+    supports_images: store.supports_images,
+    image_fetch_cost: store.image_fetch_cost ?? (store.supports_images ? "low" : "unsupported"),
+    default_include_images:
+      store.default_include_images ??
+      (store.supports_images && (store.image_fetch_cost ?? "low") === "low"),
+  };
+}
+
+// =============================================================================
+// Mappers — ProductPriceItem → ProductPreview
+// =============================================================================
+
+function productPriceItemToPreview(item: ProductPriceItem, sourceUrl: string): ProductPreview {
+  const original = parseMoney(item.original_price);
+  const pix = parseMoney(item.pix_price);
+  const card = parseMoney(item.price);
+
+  const pixDiscountPercent =
+    pix !== null && original !== null && original > 0
+      ? Math.round(((original - pix) / original) * 100)
+      : parseMoney(item.discount_percentage);
+
+  const images = (item.images ?? [])
+    .filter((img): img is string => typeof img === "string" && img.trim() !== "")
+    .map((url) => ({ url, alt: null, width: null, height: null }));
+
+  const installments =
+    item.installment_count != null && item.installment_price != null
+      ? {
+          quantity: item.installment_count,
+          amount: parseMoney(item.installment_price) ?? 0,
+          total:
+            (parseMoney(item.installment_price) ?? 0) * item.installment_count,
+          interestFree: null as boolean | null,
+        }
+      : null;
+
+  return {
+    source: item.store,
+    url: item.canonical_url || item.url || sourceUrl,
+    productId: item.product_id,
+    sourceProductId: item.sku,
+    name: item.title,
+    brand: item.brand,
+    model: item.model,
+    variant: item.variant,
+    country: item.country,
+    currency: item.currency,
+    gtin: item.gtin,
+    gtin_type: null,
+    gtin_confidence: null,
+    gtin_source: null,
+    mpn: null,
+    originalPrice: original,
+    pixPrice: pix,
+    pixDiscountPercent,
+    cardPrice: card,
+    installments,
+    priceDifferencePixToCard: pix !== null && card !== null ? card - pix : null,
+    seller: item.seller,
+    deliveryResponsible: null,
+    special_status: null,
+    shipping_from: null,
+    taxonomy: [],
+    main_image: images[0]?.url ?? null,
+    images,
+    image_status: (() => {
+      const meta = (item as { metadata?: Record<string, unknown> }).metadata;
+      const status = meta?.image_status;
+      if (
+        status === "success" ||
+        status === "empty" ||
+        status === "omitted" ||
+        status === "error" ||
+        status === "partial"
+      ) {
+        return status;
+      }
+      if (images.length > 0) return "success";
+      return null;
+    })(),
+    image_error: (() => {
+      const meta = (item as { metadata?: Record<string, unknown> }).metadata;
+      const err = meta?.image_error;
+      return typeof err === "string" ? err : null;
+    })(),
+  };
+}
+
+// =============================================================================
+// Mappers — MatchResponse → OtherStorePricesResponse
+// =============================================================================
+
+function matchHitToOtherStorePrice(hit: MatchHit): OtherStorePrice {
+  const product = hit.product;
+  const original = parseMoney(product.original_price);
+  const pix = parseMoney(product.pix_price);
+  const card = parseMoney(product.price);
+
+  const pixDiscountPercent =
+    pix !== null && original !== null && original > 0
+      ? Math.round(((original - pix) / original) * 100)
+      : parseMoney(product.discount_percentage);
+
+  const installments =
+    product.installment_count != null && product.installment_price != null
+      ? {
+          quantity: product.installment_count,
+          amount: parseMoney(product.installment_price) ?? 0,
+          total:
+            (parseMoney(product.installment_price) ?? 0) * product.installment_count,
+          interestFree: null as boolean | null,
+        }
+      : null;
+
+  return {
+    storeId: hit.store,
+    displayName: getStoreDisplayName(hit.store) || hit.store,
+    url: product.canonical_url || product.url,
+    currency: product.currency,
+    originalPrice: original,
+    pixDiscountPercent,
+    pixPrice: pix,
+    cardPrice: card,
+    installments,
+    seller: product.seller ?? null,
+    deliveryResponsible: null,
+  };
+}
+
+function matchResponseToOtherStorePrices(match: MatchResponse): OtherStorePricesResponse {
+  const diagnostics: Array<Record<string, unknown>> = [
+    ...match.errors.map((e) => ({ ...e, status: "error" })),
+    ...match.unmatched_stores.map((store) => ({
+      store,
+      status: "unmatched",
+    })),
+  ];
+  const priced = match.matches.filter(
+    (hit) => hit.decision === "auto_match" || hit.decision === "review",
+  );
+  return {
+    prices: priced.map(matchHitToOtherStorePrice),
+    diagnostics,
+  };
+}
+
+/**
+ * Normaliza evento SSE bruto do /match/stream para OtherStoreProgressEvent.
+ * NUNCA mapeia status ERROR para no_result.
+ */
+function normalizeSseEvent(raw: Record<string, unknown>): OtherStoreProgressEvent {
+  const rawStatus = String(raw.status ?? "running");
+  let status: OtherStoreProgressEvent["status"] = "running";
+  if (rawStatus === "success") status = "success";
+  else if (rawStatus === "error") status = "error"; // NUNCA mapear ERROR para no_result
+  else if (rawStatus === "warning") status = "warning";
+  else if (rawStatus === "no_result" || rawStatus === "unmatched") status = "no_result";
+  else if (rawStatus === "pending") status = "pending";
+
+  const rawType = String(raw.type ?? "");
+  let eventType: OtherStoreProgressEvent["type"] = "store_progress";
+  if (!raw.store && rawType !== "search_result" && rawType !== "result") {
+    eventType = "search_progress";
+  } else if (rawType === "search_result" || rawType === "result") {
+    eventType = "search_result";
+  }
+
+  const resultRaw = raw.result;
+  const mappedResult: OtherStorePricesResponse | undefined =
+    resultRaw && typeof resultRaw === "object"
+      ? matchResponseToOtherStorePrices(resultRaw as MatchResponse)
+      : undefined;
+
+  return {
+    type: eventType,
+    store: (raw.store as string | null | undefined) ?? null,
+    display_name: (raw.display_name as string | null | undefined) ?? null,
+    stage: String(raw.stage ?? ""),
+    status,
+    message: String(raw.message ?? ""),
+    candidate_count: raw.candidate_count as number | undefined,
+    sequence: raw.sequence as string | number | null | undefined,
+    result: mappedResult,
+  };
+}
+
+// =============================================================================
+// authApi
+// =============================================================================
+
 export const authApi = {
-  // Gera a URL do endpoint FastAPI que inicia o fluxo OAuth.
-  // O browser deve navegar diretamente para essa URL (window.location.href),
-  // nunca via fetch. A FastAPI retorna 302 para o Supabase/Google.
-  signInUrl(nextPath: string): string | null {
-    if (!hasApiConfiguration()) return null;
-    // window.location.origin so esta disponivel no browser (client component).
-    // Nunca use isso em Server Components.
-    const origin =
-      typeof window !== "undefined"
-        ? window.location.origin
-        : process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-    const safePath =
-      typeof nextPath === "string" && nextPath.startsWith("/") && !nextPath.startsWith("//")
-        ? nextPath
-        : "/admin";
-    const callbackTarget = `${origin}/auth/callback?next=${encodeURIComponent(safePath)}`;
-    return apiUrl("/api/v1/auth/google/login", { redirect_frontend_url: callbackTarget });
-  },
-
-  async startGoogleLogin(nextPath: string): Promise<string> {
+  /**
+   * Inicia o fluxo OAuth Google.
+   * GET /auth/google → {authorization_url} → redireciona o browser.
+   */
+  async startGoogleLogin(_nextPath?: string): Promise<string> {
     if (!hasApiConfiguration()) throw new Error("Conexao com a API nao configurada.");
-    const safePath = nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/admin";
-    const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
-    const callbackTarget = `${origin}/auth/callback?next=${encodeURIComponent(safePath)}`;
-    const result = await api.get<{ url: string }>("/api/v1/auth/google/login", {
-      query: { redirect_frontend_url: callbackTarget, format: "json" },
-    });
-    return result.url;
+    const result = await api.get<{ authorization_url: string }>("/auth/google");
+    return result.authorization_url;
   },
 
-  async me(): Promise<AuthUserResponse> {
-    // Se a requisicao falhar (401, 403, etc), propaga o erro normalmente.
-    // NUNCA retornar usuario fake em caso de falha - isso e uma vulnerabilidade de seguranca.
-    const user = await api.get<{
-      id: string;
-      email: string;
-      name: string | null;
-      avatar_url: string | null;
-      role: string;
-    }>("/api/v1/auth/me");
+  /** URL imediata para OAuth (sem fetch, para uso em href). */
+  signInUrl(_nextPath: string): string | null {
+    if (!hasApiConfiguration()) return null;
+    try {
+      return apiUrl("/auth/google");
+    } catch {
+      return null;
+    }
+  },
 
+  /**
+   * Lê o access_token do fragment da URL, armazena em memória e limpa o hash.
+   * Deve ser chamado antes de me() na página de callback.
+   */
+  captureAccessTokenFromHash(): string | null {
+    if (typeof window === "undefined") return null;
+    const hash = window.location.hash.substring(1);
+    const params = new URLSearchParams(hash);
+    const token = params.get("access_token");
+    if (token) {
+      setAccessToken(token);
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      return token;
+    }
+    return null;
+  },
+
+  /** GET /auth/me — confirma identidade. Requer Bearer. */
+  async me(): Promise<AuthUserResponse> {
+    const user = await api.get<PublicUser>("/auth/me");
     return {
-      user: {
-        id: user.id,
-        name: user.name || user.email,
-        email: user.email,
-      },
-      // is_admin e determinado estritamente pelo role retornado pela API.
-      // Nunca usar || true aqui - isso tornaria qualquer usuario autenticado admin.
-      is_admin: user.role === "admin",
+      user: { id: user.id, name: user.display_name, email: null },
+      is_admin: false,
     };
   },
 
-  async login(credentials: { email: string; password: string }): Promise<AuthSessionData> {
-    return api.post<AuthSessionData>("/api/v1/auth/login", credentials);
+  /** POST /auth/refresh — renova access token via cookie HttpOnly. */
+  async refreshSession(): Promise<AuthSession> {
+    const result = await api.post<AuthSession>("/auth/refresh");
+    if (result.access_token) setAccessToken(result.access_token);
+    return result;
   },
 
-  async signUp(data: { email: string; password: string; name?: string }): Promise<AuthSessionData> {
-    return api.post<AuthSessionData>("/api/v1/auth/signup", data);
-  },
-
-  async sendMagicLink(email: string, redirectTo?: string): Promise<{ success: boolean; message: string }> {
-    return api.post<{ success: boolean; message: string }>("/api/v1/auth/magic-link", { email, redirect_to: redirectTo });
-  },
-
-  async recoverPassword(email: string, redirectTo?: string): Promise<{ success: boolean; message: string }> {
-    return api.post<{ success: boolean; message: string }>("/api/v1/auth/recover-password", { email, redirect_to: redirectTo });
-  },
-
-  async resetPassword(newPassword: string): Promise<{ success: boolean; message: string }> {
-    return api.post<{ success: boolean; message: string }>("/api/v1/auth/reset-password", { new_password: newPassword });
-  },
-
-  async refreshSession(refreshToken: string): Promise<AuthSessionData> {
-    return api.post<AuthSessionData>("/api/v1/auth/refresh", { refresh_token: refreshToken });
-  },
-
+  /** POST /auth/logout → 204. Limpa token em memória. */
   async signOut(): Promise<void> {
+    clearAccessToken();
     try {
-      await api.post<void>("/api/v1/auth/logout");
-    } finally {
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-        sessionStorage.removeItem("access_token");
-        sessionStorage.removeItem("refresh_token");
-      }
+      await api.post<void>("/auth/logout");
+    } catch {
+      // Ignorar erros de logout — sessão local já invalidada
     }
   },
 };
+
+// =============================================================================
+// catalogApi — façade com os mesmos nomes de métodos usados pelas páginas
+// =============================================================================
+
 export const catalogApi = {
+  // -------------------------------------------------------------------------
+  // Visão geral — derivada de products + stores
+  // -------------------------------------------------------------------------
   async getOverview(): Promise<CatalogOverview> {
-    return api.get<CatalogOverview>("/api/v1/catalog/overview", { cache: "no-store" });
+    const [productsResult, storesResult] = await Promise.all([
+      this.listProducts(),
+      this.listStores(),
+    ]);
+    const products = productsResult.products;
+    const stores = storesResult.stores;
+    const allOffers = products.flatMap((p) => p.variants.flatMap((v) => v.offers));
+
+    return {
+      summary: {
+        products: products.length,
+        variants: products.reduce((sum, p) => sum + p.variants.length, 0),
+        offers: allOffers.length,
+        stores: stores.length,
+      },
+      recent_products: products.slice(0, 10).map((p) => ({
+        id: p.id,
+        name: p.name || p.canonical_name,
+        brand: p.brand,
+        created_at: p.created_at,
+        image_url: null,
+        variants: p.variants.length,
+        offers: p.variants.reduce((sum, v) => sum + v.offers.length, 0),
+      })),
+      single_offer_variants: [],
+      best_price_opportunities: [],
+      alerts: [],
+      recent_activity: [],
+    };
   },
 
+  // -------------------------------------------------------------------------
+  // Listagem de produtos — GET /products
+  // -------------------------------------------------------------------------
   async listProducts(): Promise<{ products: CatalogProduct[] }> {
-    return api.get<{ products: CatalogProduct[] }>("/api/v1/catalog/products", { cache: "no-store" });
+    const result = await api.get<ProductListResponse>("/products", {
+      query: { limit: 100, offset: 0 },
+      cache: "no-store",
+    } as Parameters<typeof api.get>[1]);
+    return { products: (result.items ?? []).map((view) => productViewToCatalogProduct(view)) };
   },
 
+  // -------------------------------------------------------------------------
+  // Produto individual — GET /products/{id} + galeria
+  // -------------------------------------------------------------------------
+  async getProduct(id: string): Promise<CatalogProduct> {
+    const [view, gallery] = await Promise.all([
+      api.get<ProductView>(
+        `/products/${encodeURIComponent(id)}`,
+        { cache: "no-store" } as Parameters<typeof api.get>[1],
+      ),
+      this.listProductImages(id).catch(() => [] as CatalogProductImage[]),
+    ]);
+    return productViewToCatalogProduct(view, gallery);
+  },
+
+  async listProductImages(id: string): Promise<CatalogProductImage[]> {
+    const result = await api.get<ApiProductImageListResponse>(
+      `/products/${encodeURIComponent(id)}/images`,
+      { cache: "no-store" } as Parameters<typeof api.get>[1],
+    );
+    return (result.items ?? []).map(apiImageToCatalogImage);
+  },
+
+  // -------------------------------------------------------------------------
+  // Preview — POST /crawl (include_images conforme checkbox do usuário)
+  // Sem preview_id de servidor; use id local se necessário.
+  // -------------------------------------------------------------------------
+  async previewProduct(
+    url: string,
+    options: { includeImages?: boolean } = {},
+  ): Promise<ProductPreviewResponse> {
+    const include_images = options.includeImages === true;
+    const item = await api.post<ProductPriceItem>("/crawl", { url, include_images });
+    const preview = productPriceItemToPreview(item, url);
+    return { product: preview };
+  },
+
+  /** Stub de compatibilidade — lança para acionar fallback local. */
+  async getPreview(_previewId: string): Promise<ProductPreviewResponse> {
+    throw new ApiError("Preview nao disponivel no servidor.", 404, "PREVIEW_NOT_FOUND");
+  },
+
+  /** Stub de compatibilidade — sem estado server-side de preview. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async discardPreview(_previewId: string): Promise<void> {
+    // Sem ação: ScoutApiV2 não mantém previews no servidor
+  },
+
+  // -------------------------------------------------------------------------
+  // Importar produto — POST /products
+  // -------------------------------------------------------------------------
+  async importProduct(
+    product: ProductPreview,
+    _previewId?: string,
+  ): Promise<{ product: CatalogProduct; message?: string }> {
+    const body: ProductRegisterRequest = {
+      title: product.name ?? "Produto sem nome",
+      brand: product.brand,
+      model: product.model ?? null,
+      variant: product.variant ?? null,
+      gtin: product.gtin,
+      store: product.source,
+      country: product.country ?? "BR",
+      product_id: product.productId,
+      sku: product.sourceProductId,
+      url: product.url,
+      canonical_url: product.url,
+      attributes: {},
+    };
+    const result = await api.post<ProductRegisterResponse>("/products", body);
+    const catalog = productViewToCatalogProduct(result.product);
+    // Persistir imagens aprovadas do preview quando houver URLs.
+    const previewUrls = (product.images ?? [])
+      .map((image) => image.url)
+      .filter((url): url is string => Boolean(url?.trim()));
+    if (previewUrls.length > 0) {
+      try {
+        for (let index = 0; index < previewUrls.length; index += 1) {
+          await this.addProductImage(catalog.id, previewUrls[index], {
+            position: index,
+            is_main: index === 0,
+          });
+        }
+      } catch {
+        // Cadastro do produto já ocorreu; falha de imagem não reverte o import.
+      }
+    }
+    const withImages = await this.getProduct(catalog.id);
+    return {
+      product: withImages,
+      message: result.created ? "Produto cadastrado." : "Produto reutilizado.",
+    };
+  },
+
+  // -------------------------------------------------------------------------
+  // Atualizar produto — PATCH /products/{id}
+  // -------------------------------------------------------------------------
+  async updateProduct(
+    id: string,
+    input: Record<string, unknown>,
+  ): Promise<{ product: CatalogProduct }> {
+    const body: Record<string, unknown> = {};
+    if ("canonical_name" in input) body.title = input.canonical_name;
+    if ("brand" in input) body.brand = input.brand;
+    if ("model" in input) body.model = input.model;
+    if ("category" in input) body.attributes = { category: input.category };
+    await api.patch<ProductView>(`/products/${encodeURIComponent(id)}`, body);
+    const product = await this.getProduct(id);
+    return { product };
+  },
+
+  // -------------------------------------------------------------------------
+  // Excluir produto — DELETE /products/{id} → 204
+  // -------------------------------------------------------------------------
+  async deleteProduct(id: string): Promise<void> {
+    await api.delete<void>(`/products/${encodeURIComponent(id)}`);
+  },
+
+  // -------------------------------------------------------------------------
+  // Lojas — GET /stores (somente leitura)
+  // -------------------------------------------------------------------------
   async listStores(): Promise<{ stores: CatalogStore[] }> {
-    return api.get<{ stores: CatalogStore[] }>("/api/v1/catalog/stores", { cache: "no-store" });
+    const result = await api.get<{ stores: StoreInfo[] }>("/stores", {
+      cache: "no-store",
+    } as Parameters<typeof api.get>[1]);
+    return { stores: (result.stores ?? []).map(storeInfoToCatalogStore) };
   },
 
-  async createStore(input: { name: string; url: string }): Promise<{ store: CatalogStore }> {
-    return api.post<{ store: CatalogStore }>("/api/v1/catalog/stores", input);
-  },
-
-  async previewProduct(url: string): Promise<ProductPreviewResponse> {
-    return api.post<ProductPreviewResponse>("/api/v1/catalog/products/preview", { url });
-  },
-
-  async listStoreMarkets(): Promise<{ markets: StoreMarketOption[] }> {
-    return api.get<{ markets: StoreMarketOption[] }>("/api/v1/catalog/store-markets", { cache: "no-store" });
-  },
-
-  async updateStore(id: string, input: { name: string; url: string; country: string; currency: string; logo_svg?: string | null }): Promise<{ store: CatalogStore }> {
-    return api.patch<{ store: CatalogStore }>(`/api/v1/catalog/stores/${encodeURIComponent(id)}`, input);
-  },
-
-  async getPreview(previewId: string): Promise<ProductPreviewResponse> {
-    return api.get<ProductPreviewResponse>(`/api/v1/catalog/products/previews/${encodeURIComponent(previewId)}`, { cache: "no-store" });
-  },
-
-  async discardPreview(previewId: string): Promise<void> {
-    await api.delete(`/api/v1/catalog/products/previews/${encodeURIComponent(previewId)}`);
-  },
-
-  async importProduct(product: ProductPreview, previewId?: string): Promise<{ product: CatalogProduct; message?: string }> {
-    return api.post<{ product: CatalogProduct; message?: string }>("/api/v1/catalog/products/import", previewId ? { preview_id: previewId } : { product });
-  },
-
-  async getProduct(id: string): Promise<Product> {
-    return api.get<Product>(
-      `/api/v1/catalog/products/${encodeURIComponent(id)}`,
-      { cache: "no-store" }
+  async updateStore(_id: string, _input: Record<string, unknown>): Promise<{ store: CatalogStore }> {
+    throw new ApiError(
+      "Lojas sao configuradas no registry do ScoutApiV2. Edicao nao e suportada pelo painel.",
+      422,
+      "STORES_REGISTRY_ONLY",
     );
   },
 
-  async updateProduct(id: string, input: Record<string, unknown>): Promise<{ product: Product }> {
-    return api.patch<{ product: Product }>(`/api/v1/catalog/products/${encodeURIComponent(id)}`, input);
+  // -------------------------------------------------------------------------
+  // Mercados — derivado das lojas
+  // -------------------------------------------------------------------------
+  async listStoreMarkets(): Promise<{ markets: StoreMarketOption[] }> {
+    const storesResult = await this.listStores();
+    const seen = new Set<string>();
+    const markets: StoreMarketOption[] = [];
+    for (const store of storesResult.stores) {
+      if (!seen.has(store.country)) {
+        seen.add(store.country);
+        markets.push({
+          country: store.country,
+          country_name: store.country,
+          currency: store.currency,
+          currency_name: store.currency,
+        });
+      }
+    }
+    return { markets };
   },
 
-  async addProductImage(id: string, imageUrl: string): Promise<{ image: ProductImage }> {
-    return api.post<{ image: ProductImage }>(`/api/v1/catalog/products/${encodeURIComponent(id)}/images`, { imageUrl });
+  // -------------------------------------------------------------------------
+  // Imagens — ScoutApiV2 gallery (Google Drive storage no backend)
+  // -------------------------------------------------------------------------
+  async addProductImage(
+    id: string,
+    imageUrl: string,
+    options?: { position?: number; is_main?: boolean },
+  ): Promise<{ image: ProductImage }> {
+    const created = await api.post<ApiProductImageView>(
+      `/products/${encodeURIComponent(id)}/images`,
+      {
+        source_url: imageUrl,
+        position: options?.position ?? null,
+        is_main: options?.is_main ?? false,
+      },
+    );
+    const mapped = apiImageToCatalogImage(created);
+    const display = mapped.display_url || mapped.optimized_image_url || mapped.original_url;
+    return {
+      image: {
+        id: mapped.image_id,
+        name: "Imagem do produto",
+        image_url: display ? apiUrl(display) : mapped.original_url,
+        original_url: mapped.original_url,
+        sort_order: mapped.position,
+        is_main: mapped.is_main,
+      },
+    };
   },
 
-  async updateProductImages(id: string, imageIds: string[], primaryImageId: string): Promise<{
+  async updateProductImages(
+    id: string,
+    imageIds: string[],
+    primaryImageId: string,
+  ): Promise<{
     product_id: string;
     primary_image_id: string;
     images: CatalogProductImage[];
   }> {
-    return api.patch(`/api/v1/catalog/products/${encodeURIComponent(id)}/images`, {
-      image_ids: imageIds,
-      primary_image_id: primaryImageId,
-    });
+    const body = {
+      images: imageIds.map((imageId, position) => ({
+        image_id: imageId,
+        position,
+        is_main: imageId === primaryImageId,
+      })),
+    };
+    const result = await api.patch<ApiProductImageListResponse>(
+      `/products/${encodeURIComponent(id)}/images`,
+      body,
+    );
+    const images = (result.items ?? []).map(apiImageToCatalogImage);
+    const main = images.find((image) => image.is_main) ?? images[0];
+    return {
+      product_id: id,
+      primary_image_id: main?.image_id ?? primaryImageId,
+      images,
+    };
   },
 
-  async searchOtherStorePrices(productId: string): Promise<OtherStorePricesResponse> {
-    const current = await this.getProduct(productId);
-    const variantId = current.variants[0]?.id;
-    if (!variantId) throw new Error("O produto não possui variação comercial.");
-    const result = await api.post<OtherStorePricesResponse>(
-      `/api/v1/catalog/variants/${encodeURIComponent(variantId)}/other-store-prices`,
-      undefined,
-      { cache: "no-store" },
+  async deleteProductImage(id: string, imageId: string): Promise<void> {
+    await api.delete<void>(
+      `/products/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}`,
     );
-    return { ...result, prices: (result.variant?.offers ?? []).map((offer) => ({ storeId: offer.store_id, displayName: offer.store?.name ?? offer.source, url: offer.canonical_url, currency: offer.currency, originalPrice: offer.original_price, pixDiscountPercent: offer.discount_percent, pixPrice: offer.pix_price, cardPrice: offer.card_price, installments: offer.installments == null || offer.installment_value == null ? null : { quantity: offer.installments, amount: offer.installment_value, total: offer.installments * offer.installment_value, interestFree: offer.interest_free }, availability: offer.availability, seller: offer.seller, deliveryResponsible: offer.delivery_responsible })) };
   },
-  async streamOtherStorePrices(productId: string, onEvent: (event: OtherStoreProgressEvent) => void, signal?: AbortSignal): Promise<OtherStorePricesResponse> {
-    const current = await this.getProduct(productId);
-    const variantId = current.variants[0]?.id;
-    if (!variantId) throw new Error("O produto nao possui variacao comercial.");
-    const response = await fetch(apiUrl(`/api/v1/catalog/variants/${encodeURIComponent(variantId)}/other-store-prices/stream`, { timeout_per_store: 25 }), { credentials: "include", headers: { Accept: "text/event-stream" }, signal });
-    if (!response.ok || !response.body) throw new Error(`A API respondeu com status ${response.status}.`);
+
+  // -------------------------------------------------------------------------
+  // Busca de preços (não-streaming) — POST /match
+  // -------------------------------------------------------------------------
+  async searchOtherStorePrices(productId: string): Promise<OtherStorePricesResponse> {
+    const product = await this.getProduct(productId);
+    const referenceUrl =
+      product.variants[0]?.offers[0]?.canonical_url || product.product_url;
+    if (!referenceUrl) throw new Error("O produto nao possui URL de referencia para busca.");
+    const body: MatchRequest = { reference_url: referenceUrl, persist: true };
+    const matchResponse = await api.post<MatchResponse>("/match", body);
+    return matchResponseToOtherStorePrices(matchResponse);
+  },
+
+  // -------------------------------------------------------------------------
+  // Busca de preços via SSE — POST /match/stream
+  // -------------------------------------------------------------------------
+  async streamOtherStorePrices(
+    productId: string,
+    onEvent: (event: OtherStoreProgressEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<OtherStorePricesResponse> {
+    const product = await this.getProduct(productId);
+    const referenceUrl =
+      product.variants[0]?.offers[0]?.canonical_url || product.product_url;
+    if (!referenceUrl) throw new Error("O produto nao possui URL de referencia para busca.");
+
+    const body: MatchRequest = { reference_url: referenceUrl, persist: true };
+
+    async function openStream(accessToken: string | null): Promise<Response> {
+      const requestHeaders: Record<string, string> = {
+        Accept: "text/event-stream",
+        "Content-Type": "application/json",
+      };
+      if (accessToken) requestHeaders["Authorization"] = `Bearer ${accessToken}`;
+      return fetch(apiUrl("/match/stream"), {
+        method: "POST",
+        headers: requestHeaders,
+        credentials: "include",
+        body: JSON.stringify(body),
+        signal,
+      });
+    }
+
+    let response = await openStream(getAccessToken());
+    if (response.status === 401) {
+      try {
+        const session = await authApi.refreshSession();
+        response = await openStream(session.access_token);
+      } catch {
+        clearAccessToken();
+        throw new ApiError("Sessao expirada.", 401, "UNAUTHORIZED");
+      }
+    }
+
+    if (!response.ok || !response.body) {
+      throw new ApiError(`A API respondeu com status ${response.status}.`, response.status);
+    }
+
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
     let finalResult: OtherStorePricesResponse | null = null;
+
+    function processFrame(frame: string): void {
+      const dataLine = frame
+        .split("\n")
+        .find((line) => line.startsWith("data: "))
+        ?.slice(6);
+      if (!dataLine) return;
+      try {
+        const raw = JSON.parse(dataLine) as Record<string, unknown>;
+        const event = normalizeSseEvent(raw);
+        onEvent(event);
+        if (event.result) finalResult = event.result;
+      } catch {
+        // Frame com JSON inválido — ignorar
+      }
+    }
+
     try {
       while (true) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        buffer += decoder.decode(chunk.value, { stream: true });
-        const frames = buffer.split("\n\n"); buffer = frames.pop() ?? "";
-        for (const frame of frames) { const data = frame.split("\n").find((line) => line.startsWith("data: "))?.slice(6); if (data) { const event = JSON.parse(data) as OtherStoreProgressEvent; onEvent(event); if (event.result) finalResult = event.result; } }
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() ?? "";
+        for (const frame of frames) processFrame(frame);
       }
-    } finally { reader.releaseLock(); }
-    const data = buffer.split("\n").find((line) => line.startsWith("data: "))?.slice(6);
-    if (data) { const event = JSON.parse(data) as OtherStoreProgressEvent; onEvent(event); if (event.result) finalResult = event.result; }
-    if (finalResult) return { ...finalResult, prices: finalResult.prices ?? (finalResult.variant?.offers ?? []).map((offer) => ({ storeId: offer.store_id, displayName: offer.store?.name ?? offer.source, url: offer.canonical_url, currency: offer.currency, originalPrice: offer.original_price, pixDiscountPercent: offer.discount_percent, pixPrice: offer.pix_price, cardPrice: offer.card_price, installments: offer.installments == null || offer.installment_value == null ? null : { quantity: offer.installments, amount: offer.installment_value, total: offer.installments * offer.installment_value, interestFree: offer.interest_free }, availability: offer.availability, seller: offer.seller, deliveryResponsible: offer.delivery_responsible })) };
-    if (!data) throw new Error("A busca foi encerrada sem resultado final.");
-    const event = JSON.parse(data) as OtherStoreProgressEvent;
-    throw new Error(event.message || "Nao foi possivel concluir a busca.");
-  },
-  async deleteProductImage(id: string, imageId: string): Promise<void> {
-    return api.delete<void>(`/api/v1/catalog/products/${encodeURIComponent(id)}/images`, { query: { imageId } });
+    } finally {
+      reader.releaseLock();
+    }
+
+    if (buffer.trim()) processFrame(buffer);
+
+    if (finalResult) return finalResult;
+    throw new Error("A busca foi encerrada sem resultado final.");
   },
 
-  async deleteProduct(id: string): Promise<{ success: boolean; product_id: string; images_removed: number; message: string }> {
-    return api.delete<{ success: boolean; product_id: string; images_removed: number; message: string }>(`/api/v1/catalog/products/${encodeURIComponent(id)}`);
+  // -------------------------------------------------------------------------
+  // Atualizar ofertas — POST /offers/refresh
+  // -------------------------------------------------------------------------
+  async refreshOffers(productId: string): Promise<OfferRefreshResponse> {
+    const body: OfferRefreshRequest = { canonical_product_id: productId };
+    return api.post<OfferRefreshResponse>("/offers/refresh", body);
   },
 };
