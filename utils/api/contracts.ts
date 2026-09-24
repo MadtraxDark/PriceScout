@@ -261,6 +261,7 @@ export type StoreInfo = {
   display_name?: string;
   country: string;
   currency: string;
+  supported_country_currency_pairs: Array<[string, string]>;
   domains: string[];
   implemented: boolean;
   supports_search: boolean;
@@ -269,6 +270,10 @@ export type StoreInfo = {
   match_disabled_reason?: string | null;
   image_fetch_cost?: "low" | "high" | "unsupported";
   default_include_images?: boolean;
+  logo_svg?: string | null;
+  logo_url?: string | null;
+  logo_mime_type?: string | null;
+  logo_processing_status?: "ready" | "pending" | "processing" | "failed";
 };
 
 // =============================================================================
@@ -514,7 +519,10 @@ export type CatalogStore = {
   url: string;
   country: string;
   currency: string;
+  supported_country_currency_pairs?: Array<[string, string]>;
   logo_svg?: string | null;
+  logo_url?: string | null;
+  logo_processing_status?: "ready" | "pending" | "processing" | "failed";
   productCount: number;
   updated_at: string;
   domains?: string[];
@@ -525,13 +533,6 @@ export type CatalogStore = {
   match_disabled_reason?: string | null;
   image_fetch_cost?: "low" | "high" | "unsupported";
   default_include_images?: boolean;
-};
-
-export type StoreMarketOption = {
-  country: string;
-  country_name: string;
-  currency: string;
-  currency_name: string;
 };
 
 /** Alias de compatibilidade — mapeado a partir de ProductView pelo serviço. */

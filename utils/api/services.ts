@@ -38,7 +38,6 @@ import type {
   ProductView,
   PublicUser,
   StoreInfo,
-  StoreMarketOption,
   UnreadCountResponse,
 } from "@/utils/api/contracts";
 import { parseMoney } from "@/utils/api/contracts";
@@ -188,7 +187,10 @@ function storeInfoToCatalogStore(store: StoreInfo): CatalogStore {
     url: store.domains[0] ? `https://${store.domains[0]}` : `#${store.key}`,
     country: store.country,
     currency: store.currency,
-    logo_svg: null,
+    supported_country_currency_pairs: store.supported_country_currency_pairs,
+    logo_svg: store.logo_svg ?? null,
+    logo_url: store.logo_url ? apiUrl(store.logo_url) : null,
+    logo_processing_status: store.logo_processing_status ?? "ready",
     productCount: 0,
     updated_at: new Date().toISOString(),
     domains: store.domains,
@@ -640,36 +642,20 @@ export const catalogApi = {
     return { stores: (result.stores ?? []).map(storeInfoToCatalogStore) };
   },
 
-  async updateStore(_id: string, _input: Record<string, unknown>): Promise<{ store: CatalogStore }> {
-    throw new ApiError(
-      "Lojas sao configuradas no registry do ScoutApiV2. Edicao nao e suportada pelo painel.",
-      422,
-      "STORES_REGISTRY_ONLY",
+  async uploadStoreLogo(id: string, file: File): Promise<{ store: CatalogStore }> {
+    const form = new FormData(); form.append("file", file);
+    const result = await api.post<{ store: StoreInfo }>(`/admin/stores/${encodeURIComponent(id)}/logo`, form);
+    return { store: storeInfoToCatalogStore(result.store) };
+  },
+
+  async updateStore(id: string, input: Record<string, unknown>): Promise<{ store: CatalogStore }> {
+    const result = await api.patch<{ store: StoreInfo & { logo_svg?: string | null } }>(
+      `/admin/stores/${encodeURIComponent(id)}`,
+      { display_name: input.name, logo_svg: input.logo_svg ?? null },
     );
+    return { store: storeInfoToCatalogStore(result.store) };
   },
 
-  // -------------------------------------------------------------------------
-  // Mercados — derivado das lojas
-  // -------------------------------------------------------------------------
-  async listStoreMarkets(): Promise<{ markets: StoreMarketOption[] }> {
-    const storesResult = await this.listStores();
-    const seen = new Set<string>();
-    const markets: StoreMarketOption[] = [];
-    for (const store of storesResult.stores) {
-      if (!seen.has(store.country)) {
-        seen.add(store.country);
-        markets.push({
-          country: store.country,
-          country_name: store.country,
-          currency: store.currency,
-          currency_name: store.currency,
-        });
-      }
-    }
-    return { markets };
-  },
-
-  // -------------------------------------------------------------------------
   // Imagens — ScoutApiV2 gallery (Google Drive storage no backend)
   // -------------------------------------------------------------------------
   async addProductImage(
