@@ -24,8 +24,18 @@ function runStatusHeading(run: MatchRunStatusView): string {
 
 function formatDurationMs(ms: number | null | undefined): string {
   if (ms == null || !Number.isFinite(ms)) return "—";
-  if (ms < 1000) return `${ms} ms`;
-  return `${(ms / 1000).toFixed(1)} s`;
+
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (value: number) => String(value).padStart(2, "0");
+
+  if (hours > 0) {
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  }
+
+  return `${pad(minutes)}:${pad(seconds)}`;
 }
 
 function formatWhen(iso: string | null | undefined): string {
