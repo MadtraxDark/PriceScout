@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { gsap } from "gsap";
 import Link from "next/link";
@@ -9,12 +9,15 @@ import ImageViewer, { ImageWithState } from "@/components/ImageViewer";
 import StoreConfigurationForm, { storeLogoDataUrl as svgDataUrl } from "@/components/StoreConfigurationForm";
 import { catalogApi } from "@/utils/api/services";
 import { ApiError, apiUrl } from "@/utils/api/client";
+import { resolveMediaUrl } from "@/utils/api/product-images";
 import type { CatalogOverview as CatalogOverviewData, CatalogProduct, CatalogStore, ExistingCatalogProduct, ProductPreview, StoreMarketOption } from "@/utils/api/contracts";
 import {
   defaultIncludeImagesForStore,
   matchStoreByHostname,
   type StoreCapability,
 } from "@/utils/storeCapabilities";
+import { getStoreDisplayName } from "@/utils/store-display";
+import { NotificationPanel } from "@/components/NotificationPanel";
 
 type View = "overview" | "products" | "stores" | "product";
 type ScrapeStatus = "idle" | "loading" | "ready" | "error";
@@ -25,8 +28,11 @@ function toStoreCapability(store: CatalogStore): StoreCapability {
   return {
     key: store.id,
     domains: store.domains?.length ? store.domains : store.hostname ? [store.hostname] : [],
-    implemented: true,
+    implemented: store.implemented !== false,
     supports_images: store.supports_images !== false,
+    supports_search: store.supports_search,
+    match_enabled: store.match_enabled,
+    match_disabled_reason: store.match_disabled_reason,
     image_fetch_cost: store.image_fetch_cost ?? "low",
     default_include_images: store.default_include_images === true,
   };
@@ -120,10 +126,16 @@ function Logo() { return <div className="logo"><span className="logo-mark"><span
 
 function MediaImage({ src, alt, className = "", fallback = "Imagem indisponível" }: { src: string; alt: string; className?: string; fallback?: string }) {
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const resolvedSrc = src.startsWith("/") ? apiUrl(src) : src;
+  const resolvedSrc = resolveMediaUrl(src) || "";
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  useLayoutEffect(() => {
+    setStatus("loading");
+    const node = imgRef.current;
+    if (node?.complete) setStatus(node.naturalWidth > 0 ? "loaded" : "error");
+  }, [resolvedSrc]);
   return <span className={`media-image ${className} ${status}`} aria-busy={status === "loading"}>
     {status === "loading" && <span className="media-skeleton" aria-hidden="true" />}
-    {status === "error" ? <span className="media-error"><Icon name="box" /><span>{fallback}</span></span> : <img src={resolvedSrc} alt={alt} onLoad={() => setStatus("loaded")} onError={() => setStatus("error")} />}
+    {status === "error" || !resolvedSrc ? <span className="media-error"><Icon name="box" /><span>{fallback}</span></span> : <img key={resolvedSrc} ref={imgRef} src={resolvedSrc} alt={alt} onLoad={() => setStatus("loaded")} onError={() => setStatus("error")} />}
   </span>;
 }
 
@@ -444,7 +456,7 @@ export default function Home() {
 
   return <main className="admin-shell">
     <aside className="sidebar"><div className="sidebar-top"><Logo /><span className="admin-badge">admin</span></div><nav className="main-nav" aria-label="Navegação principal"><p className="nav-label">Workspace</p>{navItems.map((item) => <button key={item.id} className={`nav-item ${view === item.id ? "active" : ""}`} onClick={() => openView(item.id)}><Icon name={item.icon} /><span>{item.label}</span>{item.id === "overview" && <span className="nav-arrow"><Icon name="arrow" /></span>}</button>)}</nav><div className="sidebar-note"><span className="live-dot" /><div><strong>API conectada</strong><span>Operações centralizadas</span></div></div><div className="sidebar-bottom"><div className="user-profile"><span className="avatar">--</span><span><strong>Conta administrativa</strong><small>Identidade não carregada</small></span></div></div></aside>
-    <section className="content-shell"><header className="topbar"><div className="mobile-logo"><Logo /></div><div className="search-box"><Icon name="search" /><input aria-label="Buscar no PriceScout" placeholder="Buscar no catálogo" /></div><div className="topbar-actions"><button className="icon-action" aria-label="Notificações"><Icon name="bell" /></button><div className="topbar-divider" /><span className="environment">API externa</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <Overview openView={openView} /> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : view === "stores" ? <CatalogView kind="stores" products={catalogProducts} stores={catalogStores} loading={catalogLoading} onEditStore={setEditingStore} /> : <FormView notice={notice} onSubmit={submitProduct} productUrl={productUrl} onProductUrlChange={changeProductUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} existingProductId={existingProductId} duplicateProduct={duplicateProduct} approvedPreview={approvedPreview} onApprove={approvePreview} progressMessage={progressMessagesForPreview(includeImages)[progressIndex] ?? "Preparando preview..."} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} matchedStore={matchedStore} includeImages={includeImages} onIncludeImagesChange={(value) => { setIncludeImagesTouched(true); setIncludeImages(value); }} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}{editingStore && <div className="store-editor-backdrop" role="presentation"><section className="store-editor" role="dialog" aria-modal="true" aria-labelledby="store-editor-title"><div className="store-editor-heading"><div><p className="eyebrow">Loja cadastrada</p><h2 id="store-editor-title">Editar loja</h2></div><button className="lightbox-close" type="button" onClick={() => setEditingStore(null)} aria-label="Fechar edição"><Icon name="close" /></button></div><StoreConfigurationForm store={editingStore} markets={storeMarkets} onCancel={() => setEditingStore(null)} onSave={saveStore} onLogoUpload={(file) => file.text()} /></section></div>}</section>
+    <section className="content-shell"><header className="topbar"><div className="mobile-logo"><Logo /></div><div className="search-box"><Icon name="search" /><input aria-label="Buscar no PriceScout" placeholder="Buscar no catálogo" /></div><div className="topbar-actions"><NotificationPanel /><div className="topbar-divider" /><span className="environment">API externa</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <Overview openView={openView} /> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : view === "stores" ? <CatalogView kind="stores" products={catalogProducts} stores={catalogStores} loading={catalogLoading} onEditStore={setEditingStore} /> : <FormView notice={notice} onSubmit={submitProduct} productUrl={productUrl} onProductUrlChange={changeProductUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} existingProductId={existingProductId} duplicateProduct={duplicateProduct} approvedPreview={approvedPreview} onApprove={approvePreview} progressMessage={progressMessagesForPreview(includeImages)[progressIndex] ?? "Preparando preview..."} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} matchedStore={matchedStore} includeImages={includeImages} onIncludeImagesChange={(value) => { setIncludeImagesTouched(true); setIncludeImages(value); }} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}{editingStore && <div className="store-editor-backdrop" role="presentation"><section className="store-editor" role="dialog" aria-modal="true" aria-labelledby="store-editor-title"><div className="store-editor-heading"><div><p className="eyebrow">Loja cadastrada</p><h2 id="store-editor-title">Editar loja</h2></div><button className="lightbox-close" type="button" onClick={() => setEditingStore(null)} aria-label="Fechar edição"><Icon name="close" /></button></div><StoreConfigurationForm store={editingStore} markets={storeMarkets} onCancel={() => setEditingStore(null)} onSave={saveStore} onLogoUpload={(file) => file.text()} /></section></div>}</section>
   </main>;
 }
 
@@ -471,7 +483,7 @@ function money(value: number | null) {
 function CatalogView({ kind, openView, products, stores, loading, onEditStore = () => undefined }: { kind: "products" | "stores"; openView?: (view: View) => void; products: CatalogProduct[]; stores: CatalogStore[]; loading: boolean; onEditStore?: (store: CatalogStore) => void }) {
   const isProducts = kind === "products";
   const rows = isProducts ? products : stores;
-  return <div className="catalog-page"><div className="page-intro"><div><p className="eyebrow">Catálogo</p><h1>{isProducts ? "Produtos cadastrados." : "Lojas cadastradas."}</h1><p className="intro-copy">{isProducts ? "Identifique rapidamente cada produto pela imagem e pelo nome." : "Consulte as lojas e sites confirmados como fontes oficiais."}</p></div>{isProducts && openView && <button className="primary-button" onClick={() => openView("product")}><Icon name="plus" /> Adicionar produto</button>}</div>{loading ? <section className="empty-state"><h2>Carregando registros...</h2></section> : rows.length === 0 ? <section className="empty-state"><span className="empty-icon"><Icon name={isProducts ? "box" : "store"} /></span><h2>Nenhum registro disponível</h2><p>{isProducts ? "Os produtos aparecerão aqui depois que forem cadastrados e aprovados." : "As lojas pré-cadastradas aparecerão aqui quando estiverem disponíveis."}</p>{isProducts && openView && <button className="outline-button" onClick={() => openView("product")}><Icon name="plus" /> Cadastrar produto</button>}</section> : isProducts ? <section className="catalog-grid" aria-label="Produtos cadastrados">{products.map((product) => { const firstOffer = product.variants.flatMap((variant) => variant.offers)[0]; const image = product.images.find((item) => item.is_main)?.original_url ?? product.images[0]?.original_url ?? firstOffer?.image_url ?? null; const offerUrl = firstOffer?.canonical_url ?? null; return <article className="catalog-card" key={product.id}><Link className="catalog-card-manage" href={`/admin/produtos/${product.id}`} aria-label={`Gerenciar ${product.canonical_name}`}><div className="catalog-card-media">{image ? <MediaImage key={image} src={image} alt="" className="catalog-media-image" /> : <span className="catalog-card-media-empty"><Icon name="box" /><span>Imagem não disponível</span></span>}</div><div className="catalog-card-body"><h2>{product.canonical_name}</h2><span className="catalog-card-link">Gerenciar produto <Icon name="arrow" /></span></div></Link>{offerUrl ? <a className="catalog-card-source" href={offerUrl} target="_blank" rel="noreferrer">Abrir origem <Icon name="external" /></a> : <span className="catalog-card-source">Oferta sem URL disponível</span>}</article>; })}</section> : <section className="catalog-list">{stores.map((store) => <article className="catalog-row" key={store.id}><div className="catalog-row-icon">{store.logo_svg ? <img src={svgDataUrl(store.logo_svg)} alt="" /> : <Icon name="store" />}</div><div className="catalog-row-main"><strong>{store.name}</strong><span>{store.hostname}</span></div><div className="catalog-row-meta"><b>{store.productCount} {store.productCount === 1 ? "produto" : "produtos"}</b><span>{store.country} · {store.currency}</span></div><button className="catalog-row-edit" type="button" onClick={() => onEditStore(store)} aria-label={`Editar ${store.name}`}><Icon name="pencil" /></button><a className="catalog-row-link" href={store.url} target="_blank" rel="noreferrer" aria-label={`Abrir ${store.name}`}><Icon name="external" /></a></article>)}</section>}</div>;
+  return <div className="catalog-page"><div className="page-intro"><div><p className="eyebrow">Catálogo</p><h1>{isProducts ? "Produtos cadastrados." : "Lojas cadastradas."}</h1><p className="intro-copy">{isProducts ? "Identifique rapidamente cada produto pela imagem e pelo nome." : "Consulte as lojas e sites confirmados como fontes oficiais."}</p></div>{isProducts && openView && <button className="primary-button" onClick={() => openView("product")}><Icon name="plus" /> Adicionar produto</button>}</div>{loading ? <section className="empty-state"><h2>Carregando registros...</h2></section> : rows.length === 0 ? <section className="empty-state"><span className="empty-icon"><Icon name={isProducts ? "box" : "store"} /></span><h2>Nenhum registro disponível</h2><p>{isProducts ? "Os produtos aparecerão aqui depois que forem cadastrados e aprovados." : "As lojas pré-cadastradas aparecerão aqui quando estiverem disponíveis."}</p>{isProducts && openView && <button className="outline-button" onClick={() => openView("product")}><Icon name="plus" /> Cadastrar produto</button>}</section> : isProducts ? <section className="catalog-grid" aria-label="Produtos cadastrados">{products.map((product) => { const firstOffer = product.variants.flatMap((variant) => variant.offers)[0]; const image = product.primary_image_url ?? product.images.find((item) => item.is_main)?.display_url ?? product.images[0]?.display_url ?? null; const offerUrl = firstOffer?.canonical_url ?? null; return <article className="catalog-card" key={product.id}><Link className="catalog-card-manage" href={`/admin/produtos/${product.id}`} aria-label={`Gerenciar ${product.canonical_name}`}><div className="catalog-card-media">{image ? <MediaImage key={image} src={image} alt="" className="catalog-media-image" /> : <span className="catalog-card-media-empty"><Icon name="box" /><span>Imagem não disponível</span></span>}</div><div className="catalog-card-body"><h2>{product.canonical_name}</h2><span className="catalog-card-link">Gerenciar produto <Icon name="arrow" /></span></div></Link>{offerUrl ? <a className="catalog-card-source" href={offerUrl} target="_blank" rel="noreferrer">Abrir origem <Icon name="external" /></a> : <span className="catalog-card-source">Oferta sem URL disponível</span>}</article>; })}</section> : <section className="catalog-list">{stores.map((store) => <article className="catalog-row" key={store.id}><div className="catalog-row-icon">{store.logo_svg ? <img src={svgDataUrl(store.logo_svg)} alt="" /> : <Icon name="store" />}</div><div className="catalog-row-main"><strong>{store.name}</strong><span>{store.hostname}</span>{store.match_enabled === false ? <small className="store-match-disabled">Comparação temporariamente indisponível{store.match_disabled_reason ? ` (${store.match_disabled_reason})` : ""}</small> : null}</div><div className="catalog-row-meta"><b>{store.productCount} {store.productCount === 1 ? "produto" : "produtos"}</b><span>{store.country} · {store.currency}</span></div><button className="catalog-row-edit" type="button" onClick={() => onEditStore(store)} aria-label={`Editar ${store.name}`}><Icon name="pencil" /></button><a className="catalog-row-link" href={store.url} target="_blank" rel="noreferrer" aria-label={`Abrir ${store.name}`}><Icon name="external" /></a></article>)}</section>}</div>;
 }
 
 function FormView({ notice, onSubmit, productUrl, onProductUrlChange, scrapeStatus, scrapedProduct, scrapeError, existingProductId, duplicateProduct, approvedPreview, onApprove, progressMessage, previewVisible, onRevealPreview, previewRef, importing, importSteps, importError, importPanelRef, importSuccessRef, matchedStore, includeImages, onIncludeImagesChange }: { notice: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; productUrl: string; onProductUrlChange: (value: string) => void; scrapeStatus: ScrapeStatus; scrapedProduct: ProductPreview | null; scrapeError: string; existingProductId: string | null; duplicateProduct: ExistingCatalogProduct | null; approvedPreview: boolean; onApprove: () => void; progressMessage: string; previewVisible: boolean; onRevealPreview: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; importSteps: ImportStep[]; importError: string; importPanelRef: RefObject<HTMLDivElement | null>; importSuccessRef: RefObject<HTMLDivElement | null>; matchedStore: StoreCapability | null; includeImages: boolean; onIncludeImagesChange: (value: boolean) => void }) {
@@ -521,7 +533,7 @@ function FormView({ notice, onSubmit, productUrl, onProductUrlChange, scrapeStat
 
 function DuplicateProductNotice({ product }: { product: ExistingCatalogProduct }) {
   const createdAtLabel = formatCatalogDate(product.created_at);
-  const imageUrl = product.main_image_url;
+  const imageUrl = product.main_image_url || product.primary_image_url || null;
 
   return <section className="duplicate-product-notice" role="alert" aria-label="Produto já cadastrado">
     <div className="duplicate-product-media">
@@ -553,23 +565,7 @@ function DiscardDialog({ product, onKeep, onDiscard }: { product: ProductPreview
 }
 
 function formatStoreName(source?: string | null, urlStr?: string): string {
-  if (source) {
-    const s = source.toLowerCase();
-    if (s === "magazine_luiza" || s === "magazineluiza") return "Magazine Luiza";
-    if (s === "kabum") return "KaBuM!";
-    if (s === "mercadolivre" || s === "mercado_livre") return "Mercado Livre";
-    if (s === "amazon") return "Amazon Brasil";
-    if (s !== "generic" && s !== "desconhecido") {
-      return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-    }
-  }
-  if (urlStr) {
-    try {
-      const parsed = new URL(urlStr);
-      return parsed.hostname.replace(/^www\./, "");
-    } catch {}
-  }
-  return "Loja oficial";
+  return getStoreDisplayName(source, urlStr);
 }
 
 function canonicalGalleryImageKey(value: string): string {

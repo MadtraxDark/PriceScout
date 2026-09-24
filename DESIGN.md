@@ -41,6 +41,7 @@ Transições curtas para estados de operação e uma pulsação lenta apenas na 
 - Sem texto genérico de marketing ou valores falsamente precisos.
 - Sem sobreposição de conteúdo, labels flutuantes ou ícones Unicode.
 - É estritamente proibido usar dados mockados, fictícios, de exemplo ou hardcoded na interface. Sem dados reais, usar estado vazio, carregamento ou configuração.
+- A UI usa labels legíveis em português; nunca expor `snake_case`, enums ou IDs de sistema crus (ex.: `auto_match`, `amazon_br`). Ver `utils/display/` e `AGENTS.md`.
 
 ## Superfície de catálogo
 

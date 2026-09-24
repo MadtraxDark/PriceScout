@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { NotificationPanel } from "@/components/NotificationPanel";
 import { ApiError } from "@/utils/api/client";
 import { authApi } from "@/utils/api/services";
 
@@ -14,6 +15,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const [access, setAccess] = useState<AccessState>("checking");
   const [message, setMessage] = useState("");
   const [attempt, setAttempt] = useState(0);
+  // Home `/admin` já tem o sino no topbar; rotas aninhadas usam slot fixo.
+  const showFloatingBell = pathname.startsWith("/admin/produtos");
 
   useEffect(() => {
     let active = true;
@@ -77,5 +80,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  return children;
+  return (
+    <>
+      {showFloatingBell && (
+        <div className="admin-notification-slot">
+          <NotificationPanel />
+        </div>
+      )}
+      {children}
+    </>
+  );
 }

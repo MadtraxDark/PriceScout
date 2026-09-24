@@ -55,6 +55,13 @@ export type ProductListingView = {
   promotion_price?: string | null;
   promotion_conditions?: Record<string, unknown>;
   promotion_commercially_active?: boolean;
+  /** Valor de referência em BRL (somente FX). Null se indisponível. */
+  converted_price_brl?: string | number | null;
+  exchange_rate?: string | number | null;
+  exchange_rate_type?: string | null;
+  exchange_rate_status?: string | null;
+  exchange_rate_source?: string | null;
+  exchange_rate_updated_at?: string | null;
 };
 
 /** ProductView retornado por GET /products e GET /products/{id}. */
@@ -67,6 +74,8 @@ export type ProductView = {
   attributes: Record<string, unknown>;
   gtins: string[];
   listings: ProductListingView[];
+  images?: ApiProductImageView[];
+  primary_image_url?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -76,6 +85,30 @@ export type ProductListResponse = {
   count: number;
   limit: number;
   offset: number;
+};
+
+/** Resposta canônica do ScoutApiV2 para galeria. */
+export type ApiProductImageView = {
+  image_id: string;
+  product_id: string;
+  position: number;
+  is_main: boolean;
+  source_url: string;
+  original_url: string | null;
+  optimized_url: string | null;
+  display_url: string | null;
+  original_status: string;
+  optimized_status: string;
+  original_width: number | null;
+  original_height: number | null;
+  optimized_error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApiProductImageListResponse = {
+  items: ApiProductImageView[];
+  count: number;
 };
 
 export type ProductRegisterRequest = {
@@ -92,6 +125,13 @@ export type ProductRegisterRequest = {
   sku?: string | null;
   url?: string | null;
   canonical_url?: string | null;
+  /** Preço do preview — seed do OfferSnapshot inicial no ScoutApiV2. */
+  price?: number | string | null;
+  pix_price?: number | string | null;
+  original_price?: number | string | null;
+  currency?: string | null;
+  seller?: string | null;
+  available?: boolean | null;
 };
 
 export type ProductRegisterResponse = {
@@ -148,7 +188,7 @@ export type ProductPriceItem = {
 };
 
 // ---------------------------------------------------------------------------
-// Match — POST /match e POST /match/stream
+// Match — POST /match (execução síncrona legada)
 // ---------------------------------------------------------------------------
 
 export type MatchReason = {
@@ -159,6 +199,7 @@ export type MatchReason = {
 
 export type MatchHit = {
   store: string;
+  store_display_name?: string | null;
   country: string;
   listing_id: string | null;
   decision: "auto_match" | "review" | "reject";
@@ -170,12 +211,14 @@ export type MatchHit = {
 
 export type MatchStoreError = {
   store: string;
+  store_display_name?: string | null;
   code: string;
   message: string;
 };
 
 export type MatchRequest = {
   reference_url: string;
+  canonical_product_id?: string | null;
   stores?: string[];
   include_review?: boolean;
   persist?: boolean;
@@ -215,12 +258,15 @@ export type OfferRefreshResponse = {
 
 export type StoreInfo = {
   key: string;
+  display_name?: string;
   country: string;
   currency: string;
   domains: string[];
   implemented: boolean;
   supports_search: boolean;
   supports_images: boolean;
+  match_enabled?: boolean;
+  match_disabled_reason?: string | null;
   image_fetch_cost?: "low" | "high" | "unsupported";
   default_include_images?: boolean;
 };
@@ -243,13 +289,8 @@ export function parseMoney(value: string | number | null | undefined): number | 
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/**
- * Formata valor monetário para exibição em pt-BR.
- */
-export function formatMoney(value: number | null | undefined, currency = "BRL"): string {
-  if (value === null || value === undefined) return "—";
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(value);
-}
+/** Reexport — formatação central em `utils/money.ts`. */
+export { formatMoney } from "@/utils/money";
 
 // ---------------------------------------------------------------------------
 // Tipos de UI para produto (usados por páginas e componentes existentes)
@@ -401,6 +442,13 @@ export type CatalogOffer = {
   promotion_status?: string | null;
   promotion_commercially_active?: boolean;
   available?: boolean | null;
+  /** Valor de referência em BRL = preço estrangeiro × cotação (sem impostos). */
+  converted_price_brl?: number | null;
+  exchange_rate?: number | null;
+  exchange_rate_type?: string | null;
+  exchange_rate_status?: string | null;
+  exchange_rate_source?: string | null;
+  exchange_rate_updated_at?: string | null;
 };
 
 export type CatalogProductVariant = {
@@ -426,30 +474,6 @@ export type CatalogProductImage = {
   drive_original_id?: string | null;
   drive_avif_id?: string | null;
   error?: string | null;
-};
-
-/** Resposta canônica do ScoutApiV2 para galeria. */
-export type ApiProductImageView = {
-  image_id: string;
-  product_id: string;
-  position: number;
-  is_main: boolean;
-  source_url: string;
-  original_url: string | null;
-  optimized_url: string | null;
-  display_url: string | null;
-  original_status: string;
-  optimized_status: string;
-  original_width: number | null;
-  original_height: number | null;
-  optimized_error: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type ApiProductImageListResponse = {
-  items: ApiProductImageView[];
-  count: number;
 };
 
 export type CatalogProduct = {
@@ -495,6 +519,10 @@ export type CatalogStore = {
   updated_at: string;
   domains?: string[];
   supports_images?: boolean;
+  supports_search?: boolean;
+  implemented?: boolean;
+  match_enabled?: boolean;
+  match_disabled_reason?: string | null;
   image_fetch_cost?: "low" | "high" | "unsupported";
   default_include_images?: boolean;
 };
@@ -510,30 +538,13 @@ export type StoreMarketOption = {
 export type Product = CatalogProduct;
 
 // ---------------------------------------------------------------------------
-// Preços em outras lojas
+// Preços em outras lojas (resultado síncrono legado)
 // ---------------------------------------------------------------------------
 
 export type OtherStorePricesResponse = {
   variant?: CatalogProductVariant;
   prices?: OtherStorePrice[];
   diagnostics: Array<Record<string, unknown>>;
-};
-
-export type OtherStoreProgressEvent = {
-  type: "store_progress" | "search_progress" | "search_result" | string;
-  store?: string | null;
-  display_name?: string | null;
-  stage: string;
-  status: "pending" | "running" | "success" | "warning" | "error" | "no_result";
-  message: string;
-  candidate_count?: number;
-  sequence?: number | string | null;
-  event_id?: number | string | null;
-  attempt?: number | string | null;
-  timestamp?: string | null;
-  created_at?: string | null;
-  occurred_at?: string | null;
-  result?: OtherStorePricesResponse;
 };
 
 export type OtherStorePrice = {
@@ -548,6 +559,112 @@ export type OtherStorePrice = {
   installments: { quantity: number; amount: number; total: number; interestFree: boolean | null } | null;
   seller: string | null;
   deliveryResponsible: string | null;
+};
+
+// ---------------------------------------------------------------------------
+// Match Run persistente — polling (substitui SSE)
+// ---------------------------------------------------------------------------
+
+export type MatchRunStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type MatchStoreRunStatus =
+  | "pending"
+  | "running"
+  | "match"
+  | "no_match"
+  | "error";
+
+export type MatchRunStatusView = {
+  id: string;
+  product_id: string;
+  status: MatchRunStatus;
+  started_at: string;
+  finished_at: string | null;
+  last_activity_at: string;
+  claimed_at?: string | null;
+  /** Início da attempt ativa (claimed_at) ou started_at — base do timer UX. */
+  active_since?: string | null;
+  attempts?: number;
+  total_duration_ms: number | null;
+  stores_total: number;
+  stores_completed: number;
+  matches_found: number;
+  no_matches: number;
+  errors: number;
+  failure_code: string | null;
+  failure_message: string | null;
+  already_active: boolean;
+};
+
+export type MatchRunListResponse = {
+  items: MatchRunStatusView[];
+};
+
+export type MatchCandidateLogView = {
+  sequence: number;
+  title: string | null;
+  url: string | null;
+  store_product_id: string | null;
+  decision: string | null;
+  confidence: string | number | null;
+  reasons: string[];
+  duration_ms: number | null;
+};
+
+export type MatchStoreRunView = {
+  id: string;
+  store: string;
+  store_display_name: string | null;
+  status: MatchStoreRunStatus;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number | null;
+  queries: string[];
+  queries_count: number;
+  candidates_found: number;
+  candidates_evaluated: number;
+  matched_url: string | null;
+  matched_title: string | null;
+  matched_price: string | number | null;
+  matched_currency: string | null;
+  matched_confidence: string | number | null;
+  matched_reasons: string[];
+  error_code: string | null;
+  error_message: string | null;
+  search_duration_ms: number | null;
+  candidate_fetch_duration_ms: number | null;
+  candidates: MatchCandidateLogView[];
+};
+
+export type MatchRunDetailView = {
+  run: MatchRunStatusView;
+  stores: MatchStoreRunView[];
+};
+
+export type NotificationView = {
+  id: string;
+  type: string;
+  product_id: string | null;
+  match_run_id: string | null;
+  title: string;
+  message: string;
+  created_at: string;
+  read_at: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type NotificationListResponse = {
+  items: NotificationView[];
+  unread_count: number;
+};
+
+export type UnreadCountResponse = {
+  unread_count: number;
 };
 
 // ---------------------------------------------------------------------------

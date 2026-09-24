@@ -1,5 +1,10 @@
 import { api, ApiError, apiUrl, hasApiConfiguration } from "@/utils/api/client";
-import { clearAccessToken, getAccessToken, setAccessToken } from "@/utils/api/auth-token";
+import {
+  apiImageToCatalogImage,
+  pickPrimaryImageUrl,
+  toGalleryProductImage,
+} from "@/utils/api/product-images";
+import { clearAccessToken, setAccessToken } from "@/utils/api/auth-token";
 import { getStoreDisplayName } from "@/utils/store-display";
 import type {
   AuthSession,
@@ -12,10 +17,14 @@ import type {
   MatchHit,
   MatchRequest,
   MatchResponse,
+  MatchRunDetailView,
+  MatchRunListResponse,
+  MatchRunStatusView,
+  NotificationListResponse,
+  NotificationView,
   OfferRefreshRequest,
   OfferRefreshResponse,
   OtherStorePricesResponse,
-  OtherStoreProgressEvent,
   OtherStorePrice,
   ApiProductImageListResponse,
   ApiProductImageView,
@@ -30,6 +39,7 @@ import type {
   PublicUser,
   StoreInfo,
   StoreMarketOption,
+  UnreadCountResponse,
 } from "@/utils/api/contracts";
 import { parseMoney } from "@/utils/api/contracts";
 
@@ -76,11 +86,12 @@ function listingToCatalogOffer(
   const pix = toNumber(listing.pix_price);
   const original = toNumber(listing.original_price);
   const promoActive = Boolean(listing.promotion_commercially_active);
+  const storeKey = listing.store;
   return {
     id: listing.id ?? `${productId}-listing-${index}`,
     catalog_product_variant_id: productId,
-    store_id: listing.store,
-    source: listing.store,
+    store_id: storeKey,
+    source: storeKey,
     external_product_id: listing.product_id,
     canonical_url: listing.canonical_url,
     seller: listing.seller ?? null,
@@ -96,7 +107,11 @@ function listingToCatalogOffer(
     currency: listing.currency || "BRL",
     country: listing.country,
     market: listing.country,
-    store: { id: listing.store, name: listing.store, hostname: "" },
+    store: {
+      id: storeKey,
+      name: getStoreDisplayName(storeKey, listing.canonical_url || listing.url),
+      hostname: "",
+    },
     history: [],
     last_checked_at: listing.last_checked_at ?? null,
     next_check_at: listing.next_check_at ?? null,
@@ -104,23 +119,12 @@ function listingToCatalogOffer(
     promotion_status: listing.promotion_status ?? null,
     promotion_commercially_active: promoActive,
     available: listing.available ?? null,
-  };
-}
-
-function apiImageToCatalogImage(view: ApiProductImageView): CatalogProductImage {
-  const display = view.display_url || view.optimized_url || view.original_url;
-  return {
-    image_id: view.image_id,
-    product_id: view.product_id,
-    original_url: view.source_url,
-    optimized_image_url: display,
-    display_url: display,
-    position: view.position,
-    is_main: view.is_main,
-    status: view.original_status,
-    original_status: view.original_status,
-    optimized_status: view.optimized_status,
-    error: view.optimized_error,
+    converted_price_brl: toNumber(listing.converted_price_brl),
+    exchange_rate: toNumber(listing.exchange_rate),
+    exchange_rate_type: listing.exchange_rate_type ?? null,
+    exchange_rate_status: listing.exchange_rate_status ?? null,
+    exchange_rate_source: listing.exchange_rate_source ?? null,
+    exchange_rate_updated_at: listing.exchange_rate_updated_at ?? null,
   };
 }
 
@@ -149,8 +153,10 @@ function productViewToCatalogProduct(
   };
 
   const firstListing = view.listings[0] ?? null;
-  const mainImage = gallery.find((image) => image.is_main) ?? gallery[0] ?? null;
-  const mainUrl = mainImage?.display_url || mainImage?.optimized_image_url || null;
+  const fromApi = (view.images ?? []).map(apiImageToCatalogImage);
+  const resolvedGallery = gallery.length > 0 ? gallery : fromApi;
+  const primaryUrl = pickPrimaryImageUrl(view.primary_image_url, resolvedGallery);
+  const mainImage = resolvedGallery.find((image) => image.is_main) ?? resolvedGallery[0] ?? null;
 
   return {
     id: view.id,
@@ -161,14 +167,14 @@ function productViewToCatalogProduct(
     identity_attributes: view.attributes ?? {},
     identity_status: "confirmed",
     variants: [variant],
-    images: gallery,
+    images: resolvedGallery,
     created_at: view.created_at,
     updated_at: view.updated_at,
     name: view.title,
     product_url: firstListing?.canonical_url ?? "",
     source: firstListing?.store ?? "",
     external_product_id: firstListing?.product_id ?? "",
-    primary_image_url: mainUrl ? apiUrl(mainUrl) : null,
+    primary_image_url: primaryUrl,
     primary_image_id: mainImage?.image_id ?? null,
     store: firstListing ? { name: firstListing.store, hostname: "" } : null,
   };
@@ -177,7 +183,7 @@ function productViewToCatalogProduct(
 function storeInfoToCatalogStore(store: StoreInfo): CatalogStore {
   return {
     id: store.key,
-    name: getStoreDisplayName(store.key) || store.key,
+    name: getStoreDisplayName(store.key, null, store.display_name),
     hostname: store.domains[0] ?? "",
     url: store.domains[0] ? `https://${store.domains[0]}` : `#${store.key}`,
     country: store.country,
@@ -187,6 +193,10 @@ function storeInfoToCatalogStore(store: StoreInfo): CatalogStore {
     updated_at: new Date().toISOString(),
     domains: store.domains,
     supports_images: store.supports_images,
+    supports_search: store.supports_search,
+    implemented: store.implemented,
+    match_enabled: store.match_enabled ?? true,
+    match_disabled_reason: store.match_disabled_reason ?? null,
     image_fetch_cost: store.image_fetch_cost ?? (store.supports_images ? "low" : "unsupported"),
     default_include_images:
       store.default_include_images ??
@@ -303,7 +313,11 @@ function matchHitToOtherStorePrice(hit: MatchHit): OtherStorePrice {
 
   return {
     storeId: hit.store,
-    displayName: getStoreDisplayName(hit.store) || hit.store,
+    displayName: getStoreDisplayName(
+      hit.store,
+      product.canonical_url || product.url,
+      hit.store_display_name,
+    ),
     url: product.canonical_url || product.url,
     currency: product.currency,
     originalPrice: original,
@@ -334,43 +348,43 @@ function matchResponseToOtherStorePrices(match: MatchResponse): OtherStorePrices
 }
 
 /**
- * Normaliza evento SSE bruto do /match/stream para OtherStoreProgressEvent.
- * NUNCA mapeia status ERROR para no_result.
+ * Escolhe URL de referência confiável para Product Match.
+ * Nunca usa variants[0]/offers[0] cegamente.
  */
-function normalizeSseEvent(raw: Record<string, unknown>): OtherStoreProgressEvent {
-  const rawStatus = String(raw.status ?? "running");
-  let status: OtherStoreProgressEvent["status"] = "running";
-  if (rawStatus === "success") status = "success";
-  else if (rawStatus === "error") status = "error"; // NUNCA mapear ERROR para no_result
-  else if (rawStatus === "warning") status = "warning";
-  else if (rawStatus === "no_result" || rawStatus === "unmatched") status = "no_result";
-  else if (rawStatus === "pending") status = "pending";
+export function selectReferenceUrl(product: CatalogProduct): string {
+  const offers = product.variants.flatMap((variant) => variant.offers);
+  const scored = offers
+    .map((offer) => {
+      const url = (offer.canonical_url || "").trim();
+      if (!url) return null;
+      let score = 10;
+      if (offer.available !== false) score += 5;
+      if (
+        offer.pix_price != null ||
+        offer.card_price != null ||
+        offer.original_price != null
+      ) {
+        score += 4;
+      }
+      if (product.source && offer.store_id === product.source) score += 3;
+      if (offer.promotion_commercially_active) score += 1;
+      return { url, score };
+    })
+    .filter((row): row is { url: string; score: number } => row != null)
+    .sort((left, right) => right.score - left.score);
 
-  const rawType = String(raw.type ?? "");
-  let eventType: OtherStoreProgressEvent["type"] = "store_progress";
-  if (!raw.store && rawType !== "search_result" && rawType !== "result") {
-    eventType = "search_progress";
-  } else if (rawType === "search_result" || rawType === "result") {
-    eventType = "search_result";
+  const best = scored[0]?.url || (product.product_url || "").trim();
+  if (!best) {
+    throw new Error("O produto nao possui URL de referencia para busca.");
   }
+  return best;
+}
 
-  const resultRaw = raw.result;
-  const mappedResult: OtherStorePricesResponse | undefined =
-    resultRaw && typeof resultRaw === "object"
-      ? matchResponseToOtherStorePrices(resultRaw as MatchResponse)
-      : undefined;
-
-  return {
-    type: eventType,
-    store: (raw.store as string | null | undefined) ?? null,
-    display_name: (raw.display_name as string | null | undefined) ?? null,
-    stage: String(raw.stage ?? ""),
-    status,
-    message: String(raw.message ?? ""),
-    candidate_count: raw.candidate_count as number | undefined,
-    sequence: raw.sequence as string | number | null | undefined,
-    result: mappedResult,
-  };
+function moneyOrUndefined(
+  value: number | null | undefined,
+): string | undefined {
+  if (value == null || !Number.isFinite(value) || value <= 0) return undefined;
+  return value.toFixed(2);
 }
 
 // =============================================================================
@@ -471,7 +485,7 @@ export const catalogApi = {
         name: p.name || p.canonical_name,
         brand: p.brand,
         created_at: p.created_at,
-        image_url: null,
+        image_url: p.primary_image_url ?? null,
         variants: p.variants.length,
         offers: p.variants.reduce((sum, v) => sum + v.offers.length, 0),
       })),
@@ -560,6 +574,12 @@ export const catalogApi = {
       url: product.url,
       canonical_url: product.url,
       attributes: {},
+      price: moneyOrUndefined(product.cardPrice ?? product.originalPrice),
+      pix_price: moneyOrUndefined(product.pixPrice),
+      original_price: moneyOrUndefined(product.originalPrice),
+      currency: product.currency ?? "BRL",
+      seller: product.seller,
+      available: true,
     };
     const result = await api.post<ProductRegisterResponse>("/products", body);
     const catalog = productViewToCatalogProduct(result.product);
@@ -666,17 +686,7 @@ export const catalogApi = {
       },
     );
     const mapped = apiImageToCatalogImage(created);
-    const display = mapped.display_url || mapped.optimized_image_url || mapped.original_url;
-    return {
-      image: {
-        id: mapped.image_id,
-        name: "Imagem do produto",
-        image_url: display ? apiUrl(display) : mapped.original_url,
-        original_url: mapped.original_url,
-        sort_order: mapped.position,
-        is_main: mapped.is_main,
-      },
-    };
+    return { image: toGalleryProductImage(mapped) };
   },
 
   async updateProductImages(
@@ -719,97 +729,66 @@ export const catalogApi = {
   // -------------------------------------------------------------------------
   async searchOtherStorePrices(productId: string): Promise<OtherStorePricesResponse> {
     const product = await this.getProduct(productId);
-    const referenceUrl =
-      product.variants[0]?.offers[0]?.canonical_url || product.product_url;
-    if (!referenceUrl) throw new Error("O produto nao possui URL de referencia para busca.");
-    const body: MatchRequest = { reference_url: referenceUrl, persist: true };
+    const referenceUrl = selectReferenceUrl(product);
+    // Atualiza listings existentes antes da descoberta (fase de sincronização).
+    try {
+      await this.refreshOffers(productId);
+    } catch {
+      // Refresh parcial não bloqueia a descoberta em outras lojas.
+    }
+    const body: MatchRequest = {
+      reference_url: referenceUrl,
+      canonical_product_id: productId,
+      persist: true,
+      include_review: true,
+      include_images: false,
+    };
     const matchResponse = await api.post<MatchResponse>("/match", body);
     return matchResponseToOtherStorePrices(matchResponse);
   },
 
   // -------------------------------------------------------------------------
-  // Busca de preços via SSE — POST /match/stream
+  // Match Run persistente — POST/GET (polling; substitui SSE)
   // -------------------------------------------------------------------------
-  async streamOtherStorePrices(
+  async startMatchRun(productId: string): Promise<MatchRunStatusView> {
+    return api.post<MatchRunStatusView>(
+      `/products/${encodeURIComponent(productId)}/match-runs`,
+    );
+  },
+
+  async getActiveMatchRun(productId: string): Promise<MatchRunStatusView | null> {
+    const result = await api.get<MatchRunStatusView | undefined>(
+      `/products/${encodeURIComponent(productId)}/match-runs/active`,
+      { cache: "no-store" } as Parameters<typeof api.get>[1],
+    );
+    return result ?? null;
+  },
+
+  async getMatchRun(runId: string): Promise<MatchRunStatusView> {
+    return api.get<MatchRunStatusView>(
+      `/match-runs/${encodeURIComponent(runId)}`,
+      { cache: "no-store" } as Parameters<typeof api.get>[1],
+    );
+  },
+
+  async listMatchRuns(
     productId: string,
-    onEvent: (event: OtherStoreProgressEvent) => void,
-    signal?: AbortSignal,
-  ): Promise<OtherStorePricesResponse> {
-    const product = await this.getProduct(productId);
-    const referenceUrl =
-      product.variants[0]?.offers[0]?.canonical_url || product.product_url;
-    if (!referenceUrl) throw new Error("O produto nao possui URL de referencia para busca.");
+    options: { limit?: number; offset?: number } = {},
+  ): Promise<MatchRunListResponse> {
+    return api.get<MatchRunListResponse>(
+      `/products/${encodeURIComponent(productId)}/match-runs`,
+      {
+        query: { limit: options.limit ?? 20, offset: options.offset ?? 0 },
+        cache: "no-store",
+      } as Parameters<typeof api.get>[1],
+    );
+  },
 
-    const body: MatchRequest = { reference_url: referenceUrl, persist: true };
-
-    async function openStream(accessToken: string | null): Promise<Response> {
-      const requestHeaders: Record<string, string> = {
-        Accept: "text/event-stream",
-        "Content-Type": "application/json",
-      };
-      if (accessToken) requestHeaders["Authorization"] = `Bearer ${accessToken}`;
-      return fetch(apiUrl("/match/stream"), {
-        method: "POST",
-        headers: requestHeaders,
-        credentials: "include",
-        body: JSON.stringify(body),
-        signal,
-      });
-    }
-
-    let response = await openStream(getAccessToken());
-    if (response.status === 401) {
-      try {
-        const session = await authApi.refreshSession();
-        response = await openStream(session.access_token);
-      } catch {
-        clearAccessToken();
-        throw new ApiError("Sessao expirada.", 401, "UNAUTHORIZED");
-      }
-    }
-
-    if (!response.ok || !response.body) {
-      throw new ApiError(`A API respondeu com status ${response.status}.`, response.status);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let finalResult: OtherStorePricesResponse | null = null;
-
-    function processFrame(frame: string): void {
-      const dataLine = frame
-        .split("\n")
-        .find((line) => line.startsWith("data: "))
-        ?.slice(6);
-      if (!dataLine) return;
-      try {
-        const raw = JSON.parse(dataLine) as Record<string, unknown>;
-        const event = normalizeSseEvent(raw);
-        onEvent(event);
-        if (event.result) finalResult = event.result;
-      } catch {
-        // Frame com JSON inválido — ignorar
-      }
-    }
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const frames = buffer.split("\n\n");
-        buffer = frames.pop() ?? "";
-        for (const frame of frames) processFrame(frame);
-      }
-    } finally {
-      reader.releaseLock();
-    }
-
-    if (buffer.trim()) processFrame(buffer);
-
-    if (finalResult) return finalResult;
-    throw new Error("A busca foi encerrada sem resultado final.");
+  async getMatchRunDetails(runId: string): Promise<MatchRunDetailView> {
+    return api.get<MatchRunDetailView>(
+      `/match-runs/${encodeURIComponent(runId)}/details`,
+      { cache: "no-store" } as Parameters<typeof api.get>[1],
+    );
   },
 
   // -------------------------------------------------------------------------
@@ -818,5 +797,43 @@ export const catalogApi = {
   async refreshOffers(productId: string): Promise<OfferRefreshResponse> {
     const body: OfferRefreshRequest = { canonical_product_id: productId };
     return api.post<OfferRefreshResponse>("/offers/refresh", body);
+  },
+};
+
+// =============================================================================
+// notificationsApi — central persistente de notificações
+// =============================================================================
+
+export const notificationsApi = {
+  async list(options: {
+    limit?: number;
+    offset?: number;
+    unreadOnly?: boolean;
+  } = {}): Promise<NotificationListResponse> {
+    return api.get<NotificationListResponse>("/notifications", {
+      query: {
+        limit: options.limit ?? 30,
+        offset: options.offset ?? 0,
+        unread_only: options.unreadOnly ?? false,
+      },
+      cache: "no-store",
+    } as Parameters<typeof api.get>[1]);
+  },
+
+  async unreadCount(): Promise<number> {
+    const result = await api.get<UnreadCountResponse>("/notifications/unread-count", {
+      cache: "no-store",
+    } as Parameters<typeof api.get>[1]);
+    return result.unread_count;
+  },
+
+  async markRead(notificationId: string): Promise<NotificationView> {
+    return api.post<NotificationView>(
+      `/notifications/${encodeURIComponent(notificationId)}/read`,
+    );
+  },
+
+  async markAllRead(): Promise<UnreadCountResponse> {
+    return api.post<UnreadCountResponse>("/notifications/read-all");
   },
 };

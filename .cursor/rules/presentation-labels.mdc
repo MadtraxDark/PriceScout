@@ -1,0 +1,13 @@
+# Presentation labels — UI vs identificadores internos
+
+Antes de renderizar qualquer valor vindo da API no PriceScout:
+
+1. Determine se o valor é **identificador interno** (enum, status, type, store key, decision, código).
+2. Se for, use um helper de apresentação centralizado (`utils/display/*` ou `getStoreDisplayName`).
+3. **Nunca** renderize o enum/ID cru no JSX (`{candidate.decision}`, `{run.status}`, `{item.type}`, `{store}`).
+4. **Nunca** “humanize” com `.replace("_", " ")` / `.replaceAll("_", " ")` / capitalize genérico.
+5. Valor desconhecido → label neutro (`Status desconhecido`, `Loja desconhecida`, …) + `console.warn` em desenvolvimento.
+6. Não duplique maps de label por página; estenda o domínio em `utils/display/`.
+7. Logs técnicos do backend e comparações em código podem continuar usando o identificador interno.
+
+Regra permanente também em `AGENTS.md` e `DESIGN.md`. Spec: `docs/superpowers/specs/2026-09-22-presentation-labels-design.md`.

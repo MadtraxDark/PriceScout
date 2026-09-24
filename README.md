@@ -62,8 +62,12 @@ Componentes e páginas não devem chamar `fetch` diretamente nem conhecer banco,
 | PATCH | `/products/{id}` | Editar título/marca/modelo/categoria |
 | DELETE | `/products/{id}` | Excluir produto |
 | POST | `/crawl` | Preview antes de importar |
-| POST | `/match` | Busca de preços (não-streaming) |
-| POST | `/match/stream` | Busca de preços via SSE |
+| POST | `/match` | Busca sync (tooling) |
+| POST | `/products/{id}/match-runs` | Iniciar busca assíncrona (202) |
+| GET | `/products/{id}/match-runs/active` | Busca ativa (ou 204) |
+| GET | `/match-runs/{id}` | Status para polling |
+| GET | `/match-runs/{id}/details` | Relatório completo |
+| GET | `/notifications` | Central de notificações |
 | POST | `/offers/refresh` | Atualizar ofertas persistidas |
 | GET | `/stores` | Lojas disponíveis (somente leitura) |
 | GET | `/health` | Health check |

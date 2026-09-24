@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { resolveMediaUrl } from "@/utils/api/product-images";
 
 export type ImageViewerImage = {
   id: string;
@@ -16,9 +17,34 @@ type ImageWithStateProps = {
 };
 
 export function ImageWithState({ src, alt, className = "" }: ImageWithStateProps) {
+  const resolvedSrc = useMemo(() => resolveMediaUrl(src) || "", [src]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
+  const imgRef = useRef<HTMLImageElement | null>(null);
 
-  return <img className={`${className} image-${status}`} src={src} alt={alt} onLoad={() => setStatus("loaded")} onError={() => setStatus("error")} />;
+  useLayoutEffect(() => {
+    setStatus("loading");
+    const node = imgRef.current;
+    // Cached images may complete before onLoad is wired; sync from the element.
+    if (node?.complete) {
+      setStatus(node.naturalWidth > 0 ? "loaded" : "error");
+    }
+  }, [resolvedSrc]);
+
+  if (!resolvedSrc) {
+    return <img className={`${className} image-error`} alt={alt} />;
+  }
+
+  return (
+    <img
+      key={resolvedSrc}
+      ref={imgRef}
+      className={`${className} image-${status}`}
+      src={resolvedSrc}
+      alt={alt}
+      onLoad={() => setStatus("loaded")}
+      onError={() => setStatus("error")}
+    />
+  );
 }
 
 export type ImageViewerProps = {

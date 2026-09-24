@@ -7,6 +7,9 @@ export type StoreCapability = {
   domains: string[];
   implemented: boolean;
   supports_images: boolean;
+  supports_search?: boolean;
+  match_enabled?: boolean;
+  match_disabled_reason?: string | null;
   image_fetch_cost: "low" | "high" | "unsupported";
   default_include_images: boolean;
 };

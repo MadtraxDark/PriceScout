@@ -29,6 +29,13 @@ O PriceScout é uma memória persistente para agentes de IA. Markdown é a fonte
 - É estritamente proibido usar emojis em código, documentação, memória, mensagens, nomes de arquivos ou comentários.
 - Use texto simples e pontuação convencional no lugar de emojis.
 
+## Labels de apresentação (UI)
+
+- Identificadores internos, enums, chaves de banco e valores em `snake_case` **nunca** devem ser renderizados diretamente ao usuário.
+- Todo valor técnico exibido na UI precisa de um **label de apresentação** explícito (camada `utils/display/` e `utils/store-display.ts`).
+- Proibido mascarar com `.replace("_", " ")` / humanize genérico. Fallback de valor desconhecido: label neutro (nunca o ID cru).
+- Detalhe operacional: `.cursor/rules/presentation-labels.mdc`.
+
 ## Registro contínuo de execução
 
 - Todo processo com mais de uma etapa deve manter um registro de progresso em `memory/working/`.

@@ -6,13 +6,19 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:money": "npx --yes tsx --test utils/money.test.ts",
+    "test:images": "npx --yes tsx --test utils/api/product-images.test.ts",
+    "test:match-run": "npx --yes tsx --test utils/match-run.test.ts",
+    "test:display": "npx --yes tsx --test utils/display/display-labels.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "gsap": "^3.15.0",
     "next": "16.3.2",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "react-hot-toast": "^2.6.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
