@@ -75,4 +75,18 @@ describe("getStoreDisplayName", () => {
   it("prefere display_name da API", () => {
     assert.equal(getStoreDisplayName("amazon_br", null, "Amazon BR API"), "Amazon BR API");
   });
+
+  it("usa o país estruturado para distinguir ofertas Amazon mesmo com nome genérico", () => {
+    assert.equal(getStoreDisplayName("amazon", "https://www.amazon.com/item", "Amazon", "BR"), "Amazon Brasil");
+    assert.equal(getStoreDisplayName("amazon", "https://www.amazon.com.br/item", "Amazon", "US"), "Amazon EUA");
+  });
+
+  it("usa o domínio como fallback quando o país não está disponível", () => {
+    assert.equal(getStoreDisplayName("amazon", "https://www.amazon.com.br/item"), "Amazon Brasil");
+    assert.equal(getStoreDisplayName("amazon", "https://www.amazon.com/item"), "Amazon EUA");
+  });
+
+  it("mantém os nomes das demais lojas inalterados", () => {
+    assert.equal(getStoreDisplayName("bestbuy", "https://www.bestbuy.com", "Best Buy", "US"), "Best Buy");
+  });
 });

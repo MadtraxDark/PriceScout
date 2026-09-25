@@ -15,6 +15,40 @@ export function elapsedSecondsSince(startedAtIso: string, nowMs: number = Date.n
   return Math.max(0, Math.floor((nowMs - started) / 1000));
 }
 
+export type MatchRunErrorState = {
+  startError: string;
+  pollError: string;
+};
+
+export type MatchRunErrorAction =
+  | { type: "start_requested" }
+  | { type: "start_succeeded" }
+  | { type: "start_failed"; message: string }
+  | { type: "poll_succeeded" }
+  | { type: "poll_failed"; message: string };
+
+export function matchRunErrorReducer(
+  state: MatchRunErrorState,
+  action: MatchRunErrorAction,
+): MatchRunErrorState {
+  switch (action.type) {
+    case "start_requested":
+      return { startError: "", pollError: "" };
+    case "start_succeeded":
+      return { startError: "", pollError: "" };
+    case "start_failed":
+      return { ...state, startError: action.message };
+    case "poll_succeeded":
+      return { ...state, pollError: "" };
+    case "poll_failed":
+      return { ...state, pollError: action.message };
+  }
+}
+
+export function getMatchRunError(state: MatchRunErrorState): string {
+  return state.startError || state.pollError;
+}
+
 export function isActiveMatchRunStatus(status: string | null | undefined): boolean {
   return status === "pending" || status === "running";
 }

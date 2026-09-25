@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { catalogApi } from "@/utils/api/services";
 import type { MatchRunStatus, MatchRunStatusView } from "@/utils/api/contracts";
@@ -10,6 +10,8 @@ import {
   isActiveMatchRunStatus,
   isTerminalMatchRunStatus,
   isValidActiveMatchRun,
+  getMatchRunError,
+  matchRunErrorReducer,
 } from "@/utils/match-run";
 import { playMatchCompleteSound } from "@/utils/match-sound";
 
@@ -65,7 +67,10 @@ export function useProductMatchRun(
   const [activeRun, setActiveRun] = useState<MatchRunStatusView | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [error, setError] = useState("");
+  const [errorState, dispatchError] = useReducer(matchRunErrorReducer, {
+    startError: "",
+    pollError: "",
+  });
 
   const previousStatusRef = useRef<MatchRunStatus | null>(null);
   const watchingRunIdRef = useRef<string | null>(null);
@@ -122,7 +127,7 @@ export function useProductMatchRun(
           throw new Error("A API retornou um estado inválido para a busca ativa.");
         }
         handleSnapshot(active);
-        setError("");
+        dispatchError({ type: "poll_succeeded" });
         return;
       }
 
@@ -131,14 +136,14 @@ export function useProductMatchRun(
       if (watchingId && (previous === "pending" || previous === "running")) {
         const terminal = await catalogApi.getMatchRun(watchingId);
         handleSnapshot(terminal);
-        setError("");
+        dispatchError({ type: "poll_succeeded" });
         return;
       }
 
       if (watchingRunIdRef.current || previousStatusRef.current) {
         handleSnapshot(null);
       }
-      setError("");
+      dispatchError({ type: "poll_succeeded" });
     } catch (pollError) {
       if (pollError instanceof DOMException && pollError.name === "AbortError") return;
       const status =
@@ -157,11 +162,10 @@ export function useProductMatchRun(
         rateLimitedUntilRef.current = Date.now() + waitMs;
         return;
       }
-      setError(
-        pollError instanceof Error
-          ? pollError.message
-          : "Não foi possível consultar a busca ativa.",
-      );
+      dispatchError({
+        type: "poll_failed",
+        message: pollError instanceof Error ? pollError.message : "Não foi possível consultar a busca ativa.",
+      });
     }
   }, [handleSnapshot, productId]);
 
@@ -174,7 +178,7 @@ export function useProductMatchRun(
     if (activeRun && isActiveMatchRunStatus(activeRun.status)) return;
     startInFlightRef.current = true;
     setIsStarting(true);
-    setError("");
+    dispatchError({ type: "start_requested" });
     try {
       const run = await catalogApi.startMatchRun(productId);
       if (!isValidActiveMatchRun(run, productId)) {
@@ -183,17 +187,17 @@ export function useProductMatchRun(
       watchingRunIdRef.current = run.id;
       previousStatusRef.current = run.status;
       setActiveRun(run);
+      dispatchError({ type: "start_succeeded" });
       if (run.already_active) {
         toast("Já existe uma busca em andamento para este produto.");
       } else {
         toast.success("Busca em outras lojas iniciada.");
       }
     } catch (startError) {
-      setError(
-        startError instanceof Error
-          ? startError.message
-          : "Não foi possível iniciar a busca em outras lojas.",
-      );
+      dispatchError({
+        type: "start_failed",
+        message: startError instanceof Error ? startError.message : "Não foi possível iniciar a busca em outras lojas.",
+      });
     } finally {
       startInFlightRef.current = false;
       setIsStarting(false);
@@ -240,7 +244,7 @@ export function useProductMatchRun(
     isActive,
     isStarting,
     elapsedLabel,
-    error,
+    error: getMatchRunError(errorState),
     start,
     refreshActive,
   };

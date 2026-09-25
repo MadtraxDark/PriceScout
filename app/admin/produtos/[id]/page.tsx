@@ -62,7 +62,12 @@ function offerPrice(offer: CatalogOffer): number | null {
 }
 
 function storeLabel(offer: CatalogOffer): string {
-  return getStoreDisplayName(offer.source, offer.canonical_url || offer.store?.hostname);
+  return getStoreDisplayName(
+    offer.source,
+    offer.canonical_url || offer.store?.hostname,
+    offer.store?.name,
+    offer.country,
+  );
 }
 
 function storeInitials(label: string): string {
@@ -219,6 +224,7 @@ function PersistedOffersList({
                   const comparable = comparablePriceBrl(offer);
                   const isBest = index === 0 && comparable != null;
                   const label = storeLabel(offer);
+                  const countryCode = label === "Amazon Brasil" ? "BR" : label === "Amazon EUA" ? "US" : null;
                   const matchingStore = stores.find((store) => {
                     const key = offer.source?.trim().toLowerCase().replace(/[\s-]+/g, "_");
                     const offerHost = (() => {
@@ -271,6 +277,7 @@ function PersistedOffersList({
                             ? <img className="persisted-store-logo" src={matchingStore.logo_url ?? storeLogoDataUrl(matchingStore.logo_svg!)} alt="" />
                             : <span className="persisted-store-mark" aria-hidden="true">{storeInitials(label)}</span>}
                           <strong>{label}</strong>
+                          {countryCode && <span className="persisted-store-country" aria-label={countryCode === "BR" ? "Brasil" : "Estados Unidos"}>{countryCode}</span>}
                         </div>
                         {offer.canonical_url && <a className="store-offer-link" href={offer.canonical_url} target="_blank" rel="noopener noreferrer">Ir à loja <Icon name="arrow" /></a>}
                       </div>

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   elapsedSecondsSince,
+  getMatchRunError,
+  matchRunErrorReducer,
   formatElapsedHhMmSs,
   isActiveMatchRunStatus,
   isTerminalMatchRunStatus,
@@ -75,5 +77,25 @@ describe("isValidActiveMatchRun", () => {
       ),
       false,
     );
+  });
+});
+
+describe("match-run error state", () => {
+  it("preserves start failure when a later poll succeeds", () => {
+    const failed = matchRunErrorReducer(
+      { startError: "", pollError: "" },
+      { type: "start_failed", message: "Service Unavailable" },
+    );
+    const recoveredPoll = matchRunErrorReducer(failed, { type: "poll_succeeded" });
+    assert.equal(getMatchRunError(recoveredPoll), "Service Unavailable");
+  });
+
+  it("clears the start failure when a retry begins", () => {
+    const failed = matchRunErrorReducer(
+      { startError: "", pollError: "" },
+      { type: "start_failed", message: "Service Unavailable" },
+    );
+    const retrying = matchRunErrorReducer(failed, { type: "start_requested" });
+    assert.equal(getMatchRunError(retrying), "");
   });
 });

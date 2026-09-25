@@ -45,11 +45,44 @@ export function getStoreDisplayName(
   storeId?: string | null,
   url?: string | null,
   apiDisplayName?: string | null,
+  country?: string | null,
 ): string {
+  const normalizedId = storeId ? normalizeStoreId(storeId) : "";
+  const amazonId = normalizedId === "amazon" || normalizedId.startsWith("amazon_");
+  let hostname = "";
+  if (url) {
+    try {
+      const candidateUrl = /^[a-z][a-z\d+.-]*:\/\//i.test(url) ? url : `https://${url}`;
+      hostname = new URL(candidateUrl).hostname.replace(/^www\./, "").toLowerCase();
+    } catch {
+      // A URL invÃ¡lida nÃ£o deve impedir o uso dos outros dados da loja.
+    }
+  }
+  const amazonHost = hostname === "amazon.com.br"
+    || hostname.endsWith(".amazon.com.br")
+    || hostname === "amazon.com"
+    || hostname.endsWith(".amazon.com");
+  const isAmazon = amazonId || amazonHost;
+
+  if (isAmazon) {
+    const normalizedCountry = country?.trim().toUpperCase();
+    if (["BR", "BRA", "BRASIL", "BRAZIL"].includes(normalizedCountry ?? "")) {
+      return "Amazon Brasil";
+    }
+    if (["US", "USA", "EUA", "UNITED STATES", "UNITED STATES OF AMERICA"].includes(normalizedCountry ?? "")) {
+      return "Amazon EUA";
+    }
+    if (hostname === "amazon.com.br" || hostname.endsWith(".amazon.com.br")) {
+      return "Amazon Brasil";
+    }
+    if (hostname === "amazon.com" || hostname.endsWith(".amazon.com")) {
+      return "Amazon EUA";
+    }
+  }
+
   if (apiDisplayName && apiDisplayName.trim()) {
     return apiDisplayName.trim();
   }
-  const normalizedId = storeId ? normalizeStoreId(storeId) : "";
   if (normalizedId && STORE_DISPLAY_NAMES[normalizedId]) {
     return STORE_DISPLAY_NAMES[normalizedId];
   }
@@ -57,12 +90,6 @@ export function getStoreDisplayName(
   if (url) {
     try {
       const hostname = new URL(url).hostname.replace(/^www\./, "");
-      if (hostname === "amazon.com.br" || hostname.endsWith(".amazon.com.br")) {
-        return "Amazon Brasil";
-      }
-      if (hostname === "amazon.com" || hostname.endsWith(".amazon.com")) {
-        return "Amazon US";
-      }
       const byHostname = STORE_DISPLAY_NAMES[normalizeStoreId(hostname.split(".")[0])];
       if (byHostname) return byHostname;
       // Hostname is a public domain, not an internal snake_case id.
