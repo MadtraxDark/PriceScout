@@ -2,6 +2,7 @@ import { api, ApiError, apiUrl, hasApiConfiguration } from "@/utils/api/client";
 import {
   apiImageToCatalogImage,
   pickPrimaryImageUrl,
+  resolveMediaUrl,
   toGalleryProductImage,
 } from "@/utils/api/product-images";
 import { clearAccessToken, setAccessToken } from "@/utils/api/auth-token";
@@ -189,7 +190,7 @@ function storeInfoToCatalogStore(store: StoreInfo): CatalogStore {
     currency: store.currency,
     supported_country_currency_pairs: store.supported_country_currency_pairs,
     logo_svg: store.logo_svg ?? null,
-    logo_url: store.logo_url ? apiUrl(store.logo_url) : null,
+    logo_url: resolveMediaUrl(store.logo_url),
     logo_processing_status: store.logo_processing_status ?? "ready",
     productCount: 0,
     updated_at: new Date().toISOString(),

@@ -2,6 +2,7 @@
 
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import type { CatalogStore } from "@/utils/api/contracts";
+import { resolveMediaUrl } from "@/utils/api/product-images";
 
 export type StoreConfigurationValues = {
   name: string;
@@ -24,7 +25,8 @@ export function storeLogoDataUrl(svg: string): string {
 }
 
 function persistedLogoPreview(store: Partial<CatalogStore>): string {
-  return store.logo_url ?? (store.logo_svg ? storeLogoDataUrl(store.logo_svg) : "");
+  const resolved = store.logo_url ? resolveMediaUrl(store.logo_url) : null;
+  return resolved ?? (store.logo_svg ? storeLogoDataUrl(store.logo_svg) : "");
 }
 
 const logoExtensions = new Set(["svg", "png", "webp", "avif", "jpg", "jpeg"]);
@@ -105,6 +107,7 @@ export default function StoreConfigurationForm({
   const [logoSvg, setLogoSvg] = useState(store.logo_svg ?? "");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState(() => persistedLogoPreview(store));
+  const [previewError, setPreviewError] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const objectUrlRef = useRef<string | null>(null);
@@ -132,6 +135,7 @@ export default function StoreConfigurationForm({
     setLogoFile(null);
     setLogoSvg(store.logo_svg ?? "");
     setLogoPreview(persistedLogoPreview(store));
+    setPreviewError(false);
     setError("");
   }
 
@@ -182,6 +186,7 @@ export default function StoreConfigurationForm({
     setLogoFile(file);
     setLogoSvg("");
     setLogoPreview(nextObjectUrl);
+    setPreviewError(false);
     setError("");
     if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl);
   }
@@ -311,11 +316,15 @@ export default function StoreConfigurationForm({
         <div className="store-logo-preview-column">
           <div
             className={`store-logo-preview store-logo-preview-frame ${
-              logoPreview ? "has-logo" : "is-empty"
+              logoPreview && !previewError ? "has-logo" : "is-empty"
             }`}
           >
-            {logoPreview ? (
-              <img src={logoPreview} alt="Prévia da logo da loja" />
+            {logoPreview && !previewError ? (
+              <img
+                src={logoPreview}
+                alt="Prévia da logo da loja"
+                onError={() => setPreviewError(true)}
+              />
             ) : (
               <div className="store-logo-empty-state">
                 <FormIcon name="image" />
