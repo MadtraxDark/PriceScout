@@ -2,6 +2,7 @@
 
 import styles from "./ProductMatchResults.module.css";
 import { memo } from "react";
+import { ImageWithState } from "@/components/ImageViewer";
 import type { CatalogOffer, MatchRunStatusView, MatchStoreLiveView } from "@/utils/api/contracts";
 import { finitePositive } from "@/utils/match-run-offers";
 import { formatMoney } from "@/utils/money";
@@ -65,24 +66,41 @@ export function ProductMatchStoreProgress({ stores, recovering, storesCompleted,
   </section>;
 }
 
-export const ProgressiveOfferRow = memo(function ProgressiveOfferRow({ result, run }: { result: MatchStoreLiveView; run: MatchRunStatusView | null }) {
+export const ProgressiveOfferRow = memo(function ProgressiveOfferRow({ result, run, imageUrl, productName }: {
+  result: MatchStoreLiveView;
+  run: MatchRunStatusView | null;
+  imageUrl: string | null;
+  productName: string;
+}) {
   const price = finitePositive(result.matched_price);
   const converted = finitePositive(result.converted_price_brl);
   const url = publicUrl(result.matched_canonical_url ?? result.matched_url);
   const interrupted = run?.status === "failed" || run?.status === "cancelled";
-  return <article className={`persisted-offer-row ${styles.result}`}>
-    <div className={styles.resultMain}>
-      <div className={styles.resultPriceBlock}>
-        <span className={styles.resultStore}>{getStoreDisplayName(result.store, result.matched_url, result.store_display_name)}</span>
-        <strong className={styles.price}>{price == null ? "Preço não informado" : formatMoney(price, result.matched_currency)}</strong>
-        {converted != null && <span className={styles.conversion}>Referência em BRL: {formatMoney(converted, "BRL")}{result.exchange_rate_status === "stale" ? " · Conversão aproximada" : ""}</span>}
+  const storeName = getStoreDisplayName(result.store, result.matched_url, result.store_display_name);
+  return <article className="persisted-offer-row">
+    <div className="persisted-offer-image">
+      <ImageWithState src={imageUrl ?? ""} alt={productName} />
+    </div>
+    <div className="persisted-offer-main">
+      <div className="persisted-offer-price-line">
+        <strong>{price == null ? "Preço não informado" : formatMoney(price, result.matched_currency)}</strong>
+        {converted != null && <span>Referência em BRL: {formatMoney(converted, "BRL")}{result.exchange_rate_status === "stale" ? " · Conversão aproximada" : ""}</span>}
       </div>
-      <div className={styles.resultProduct}>
-        <p>{result.matched_title || "Produto encontrado"}</p>
+      <div className="persisted-offer-meta">
+        {result.matched_title && <span>{result.matched_title}</span>}
         <span className={styles.label}>{interrupted ? "Busca interrompida · resultado não confirmado no catálogo" : run?.status === "completed" ? "Resultado ainda não reconciliado com o catálogo" : "Resultado parcial · encontrado nesta busca"}</span>
       </div>
     </div>
-    {url && <a className={styles.storeLink} href={url} target="_blank" rel="noopener noreferrer">Ir à loja</a>}
+    <div className="persisted-offer-store">
+      <div className="persisted-store-identity">
+        <span className="persisted-store-mark" aria-hidden="true">{storeName.slice(0, 2).toLocaleUpperCase("pt-BR")}</span>
+        <strong>{storeName}</strong>
+      </div>
+      {url && <a className="store-offer-link" href={url} target="_blank" rel="noopener noreferrer">
+        Ir à loja
+        <svg className="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </a>}
+    </div>
   </article>;
 });
 

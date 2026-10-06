@@ -53,48 +53,11 @@
 .reviewList { grid-template-columns: minmax(0, 1fr); }
 .reviewList .storeRow { grid-template-columns: 8px minmax(0, 1fr) auto auto; }
 
-.result.persisted-offer-row {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(0, 1fr) 172px;
-  align-items: center;
-  gap: 1.25rem;
-  padding: 1rem 1.2rem;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--paper);
-}
-
-.resultMain { display: grid; min-width: 0; grid-template-columns: minmax(150px, .42fr) minmax(0, 1fr); align-items: center; gap: 1.5rem; }
-.resultPriceBlock { display: grid; min-width: 0; gap: .2rem; }
-.resultStore { color: var(--ink-soft); font-size: 11px; font-weight: 700; }
-.price { color: var(--ink); font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -.035em; line-height: 1.2; }
-.conversion { color: var(--muted); font-size: 10px; line-height: 1.45; }
-.resultProduct { min-width: 0; }
-.resultProduct p { margin: 0 0 .45rem; color: var(--ink); font-size: 13px; font-weight: 650; line-height: 1.45; overflow-wrap: anywhere; }
 .label { display: inline-block; color: var(--muted); font-size: 10px; line-height: 1.45; }
-.storeLink {
-  display: inline-flex;
-  min-height: 42px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 .9rem;
-  border: 1px solid #b9c9c4;
-  border-radius: 6px;
-  color: var(--ink);
-  background: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  text-decoration: none;
-  transition: background .18s ease, border-color .18s ease;
-}
-.storeLink:hover { border-color: var(--ink-soft); background: #f2f6f2; }
-.storeLink:focus-visible, .reviewLink:focus-visible { outline: 3px solid rgb(223 104 69 / 28%); outline-offset: 3px; }
+.reviewLink:focus-visible { outline: 3px solid rgb(223 104 69 / 28%); outline-offset: 3px; }
 
 @media (max-width: 760px) {
   .storeList { grid-template-columns: 1fr; }
-  .result.persisted-offer-row { grid-template-columns: minmax(0, 1fr); gap: .85rem; }
-  .storeLink { width: 100%; }
 }
 
 @media (max-width: 480px) {
@@ -104,9 +67,6 @@
   .storeStatus { grid-column: 2; text-align: left; }
   .reviewList .storeRow { grid-template-columns: 8px minmax(0, 1fr); }
   .reviewList .storeStatus, .reviewList .reviewLink { grid-column: 2; text-align: left; }
-  .result.persisted-offer-row { padding: .9rem; }
-  .resultMain { grid-template-columns: minmax(0, 1fr); gap: .75rem; }
-  .price { font-size: 21px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

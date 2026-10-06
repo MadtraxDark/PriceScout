@@ -226,7 +226,7 @@ const PersistedOffersList = memo(function PersistedOffersList({
             ) : (
               <div className="persisted-offer-list">
                 {offers.map((row, index) => {
-                  if (!row.offer && row.partial) return <ProgressiveOfferRow key={row.key} result={row.partial} run={observedRun} />;
+                  if (!row.offer && row.partial) return <ProgressiveOfferRow key={row.key} result={row.partial} run={observedRun} imageUrl={primaryImage?.image_url ?? null} productName={product.name} />;
                   const offer = row.offer!;
                   const price = offerPrice(offer);
                   const comparable = comparablePriceBrl(offer);
@@ -303,7 +303,19 @@ const PersistedOffersList = memo(function PersistedOffersList({
           </section>
         );
       })}
-      {product.variants.length === 0 && liveResults.map((result) => <ProgressiveOfferRow key={result.id} result={result} run={observedRun} />)}
+      {product.variants.length === 0 && liveResults.length > 0 && (
+        <div className="persisted-offer-list">
+          {liveResults.map((result) => (
+            <ProgressiveOfferRow
+              key={result.id}
+              result={result}
+              run={observedRun}
+              imageUrl={primaryImage?.image_url ?? null}
+              productName={product.name}
+            />
+          ))}
+        </div>
+      )}
       {product.variants.length === 0 && liveResults.length === 0 && (
         <div className="persisted-offers-empty">
           <p>Nenhuma oferta encontrada.</p>
