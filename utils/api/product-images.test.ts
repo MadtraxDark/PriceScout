@@ -1,9 +1,44 @@
 import assert from "node:assert/strict";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, before } from "node:test";
 
 describe("product-images adapters", () => {
   before(() => {
     process.env.NEXT_PUBLIC_API_BASE_URL = "http://localhost:8000";
+  });
+
+  it("renders a valid source and distinct empty, processing, and retryable states", async () => {
+    const { ImageWithState } = await import("@/components/ImageViewer");
+    const ready = renderToStaticMarkup(createElement(ImageWithState, {
+      src: "http://localhost:8000/products/p/images/i/content",
+      alt: "Produto",
+    }));
+    assert.match(ready, /<img[^>]+alt="Produto"/);
+
+    const missing = renderToStaticMarkup(createElement(ImageWithState, {
+      src: "",
+      alt: "Produto",
+      availabilityStatus: "missing",
+    }));
+    assert.match(missing, /Nenhuma imagem dispon/);
+    assert.doesNotMatch(missing, /<img/);
+
+    const processing = renderToStaticMarkup(createElement(ImageWithState, {
+      src: "",
+      alt: "Produto",
+      availabilityStatus: "processing",
+    }));
+    assert.match(processing, /sendo processada/);
+    assert.doesNotMatch(processing, /Tentar novamente/);
+
+    const temporary = renderToStaticMarkup(createElement(ImageWithState, {
+      src: "",
+      alt: "Produto",
+      availabilityStatus: "temporarily_unavailable",
+      retryable: true,
+    }));
+    assert.match(temporary, /Tentar novamente/);
   });
 
   it("maps API image to catalog without using source_url as media", async () => {
@@ -57,5 +92,70 @@ describe("product-images adapters", () => {
       primary,
       "http://localhost:8000/products/p/images/i/content?variant=original",
     );
+  });
+
+  it("diagnoses a missing Drive image without offering retry", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      detail: {
+        code: "IMAGE_STORAGE_NOT_FOUND",
+        message: "A imagem cadastrada não foi encontrada no armazenamento.",
+        image_status: "not_found",
+        retryable: false,
+      },
+    }), { status: 404, headers: { "content-type": "application/json" } });
+    try {
+      const { diagnoseImageLoadFailure } = await import("./product-images.ts");
+      const view = await diagnoseImageLoadFailure(
+        "http://localhost:8000/products/p/images/i/content?variant=original",
+      );
+      assert.equal(view.status, "not_found");
+      assert.equal(view.retryable, false);
+      assert.match(view.message, /armazenamento/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("marks transient storage failures retryable", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      detail: {
+        code: "IMAGE_STORAGE_UNAVAILABLE",
+        message: "Temporariamente indisponível.",
+        image_status: "temporarily_unavailable",
+        retryable: true,
+      },
+    }), { status: 503, headers: { "content-type": "application/json" } });
+    try {
+      const { diagnoseImageLoadFailure } = await import("./product-images.ts");
+      const view = await diagnoseImageLoadFailure("http://localhost:8000/stores/loja/logo");
+      assert.equal(view.status, "temporarily_unavailable");
+      assert.equal(view.retryable, true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("does not suggest retry for a non-recoverable storage credential failure", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      detail: {
+        code: "IMAGE_STORAGE_ERROR",
+        message: "Não foi possível acessar a imagem cadastrada.",
+        image_status: "storage_error",
+        retryable: false,
+      },
+    }), { status: 502, headers: { "content-type": "application/json" } });
+    try {
+      const { diagnoseImageLoadFailure } = await import("./product-images.ts");
+      const view = await diagnoseImageLoadFailure(
+        "http://localhost:8000/products/p/images/i/content?variant=optimized",
+      );
+      assert.equal(view.status, "storage_error");
+      assert.equal(view.retryable, false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

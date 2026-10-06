@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { startVisiblePolling } from "@/utils/visible-polling";
+import { ApiError } from "@/utils/api/client";
 import { notificationsApi } from "@/utils/api/services";
 import type { NotificationView } from "@/utils/api/contracts";
 import { playNotificationSound } from "@/utils/match-sound";
@@ -9,16 +10,19 @@ import { playNotificationSound } from "@/utils/match-sound";
 const POLL_MS = 20000;
 
 export function useNotifications() {
-  const pathname = usePathname();
   const [items, setItems] = useState<NotificationView[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const seenIdsRef = useRef<Set<string>>(new Set());
   const primedRef = useRef(false);
+  const pollingRef = useRef<ReturnType<typeof startVisiblePolling> | null>(null);
 
-  const refresh = useCallback(async () => {
+  const load = useCallback(async (signal: AbortSignal) => {
     try {
-      const result = await notificationsApi.list({ limit: 30 });
+      const result = await notificationsApi.list({ limit: 30, signal });
+      signal.throwIfAborted();
+      setError("");
       setItems(result.items);
       setUnreadCount(result.unread_count);
       if (!primedRef.current) {
@@ -37,30 +41,27 @@ export function useNotifications() {
           }
         }
       }
-    } catch {
-      // Keep last known state; avoid toast spam on global poll.
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, []);
 
+  const refresh = useCallback(async () => {
+    await pollingRef.current?.refresh();
+  }, []);
+
   useEffect(() => {
-    const initial = window.setTimeout(() => {
-      void refresh();
-    }, 0);
-    const id = window.setInterval(() => {
-      if (document.visibilityState === "visible") void refresh();
-    }, POLL_MS);
-    const onFocus = () => void refresh();
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onFocus);
+    const polling = startVisiblePolling(load, () => POLL_MS, (error) => {
+      setError(error instanceof ApiError && error.status === 429
+        ? "A atualização das notificações foi pausada pela API e será retomada automaticamente."
+        : "Não foi possível atualizar as notificações. Uma nova tentativa será feita automaticamente.");
+    });
+    pollingRef.current = polling;
     return () => {
-      window.clearTimeout(initial);
-      window.clearInterval(id);
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onFocus);
+      polling.stop();
+      if (pollingRef.current === polling) pollingRef.current = null;
     };
-  }, [pathname, refresh]);
+  }, [load]);
 
   async function markRead(notificationId: string) {
     const updated = await notificationsApi.markRead(notificationId);
@@ -72,15 +73,12 @@ export function useNotifications() {
   }
 
   async function markAllRead() {
-    await notificationsApi.markAllRead();
-    setItems((current) =>
-      current.map((item) => ({
-        ...item,
-        read_at: item.read_at ?? new Date().toISOString(),
-      })),
-    );
-    setUnreadCount(0);
+    const updated = await notificationsApi.markAllRead();
+    setUnreadCount(updated.unread_count);
+    const result = await notificationsApi.list({ limit: 30 });
+    setItems(result.items);
+    setUnreadCount(result.unread_count);
   }
 
-  return { items, unreadCount, loading, refresh, markRead, markAllRead };
+  return { items, unreadCount, loading, error, refresh, markRead, markAllRead };
 }

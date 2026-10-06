@@ -80,6 +80,24 @@ describe("MENOR PREÇO / sorting", () => {
     );
   });
 
+  it("prefere New sobre Renewed antes do preço", () => {
+    const renewedCheap: OfferMoneyFields = {
+      currency: "USD",
+      card_price: 599,
+      converted_price_brl: 3300,
+      condition: "renewed",
+    };
+    const newPricier: OfferMoneyFields = {
+      currency: "USD",
+      card_price: 799,
+      converted_price_brl: 4400,
+      condition: "new",
+    };
+    const sorted = [renewedCheap, newPricier].sort(sortOffersByComparableBrl);
+    assert.equal(sorted[0]!.condition, "new");
+    assert.equal(sorted[1]!.condition, "renewed");
+  });
+
   it("exclui USD sem conversão da comparação numérica", () => {
     const unavailable: OfferMoneyFields = {
       currency: "USD",

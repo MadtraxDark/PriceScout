@@ -15,7 +15,22 @@ export type OfferMoneyFields = {
   converted_price_brl?: number | null;
   exchange_rate_status?: ExchangeRateStatus | null;
   exchange_rate_updated_at?: string | null;
+  condition?: string | null;
 };
+
+const CONDITION_SORT_RANK: Record<string, number> = {
+  new: 0,
+  unknown: 0,
+  renewed: 1,
+  refurbished: 1,
+  open_box: 2,
+  used: 3,
+};
+
+function conditionSortRank(condition: string | null | undefined): number {
+  const code = (condition || "unknown").toLowerCase();
+  return CONDITION_SORT_RANK[code] ?? 1;
+}
 
 const FRACTION_DIGITS: Record<string, number> = {
   BRL: 2,
@@ -62,6 +77,11 @@ export function sortOffersByComparableBrl(
   left: OfferMoneyFields,
   right: OfferMoneyFields,
 ): number {
+  // Same-condition price comparison first: New ranks above Renewed so a cheaper
+  // Renewed offer is not silently presented as the absolute "menor preço".
+  const conditionDelta =
+    conditionSortRank(left.condition) - conditionSortRank(right.condition);
+  if (conditionDelta !== 0) return conditionDelta;
   const a = comparablePriceBrl(left);
   const b = comparablePriceBrl(right);
   if (a == null && b == null) return 0;

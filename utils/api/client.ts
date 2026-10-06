@@ -1,4 +1,6 @@
-import { clearAccessToken, getAccessToken, setAccessToken } from "./auth-token";
+import { clearAccessToken, getAccessToken, getSessionRevision, setAccessToken } from "./auth-token";
+import { parseRetryAfter, RequestFlights, retryDelayMs } from "./request-control";
+import { apiRateLimitScope, parseApiRateLimitScope } from "./rate-limit-scope";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, "") ?? "";
 
@@ -40,6 +42,8 @@ export class ApiUnavailableError extends Error {
 
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
+  discardResponseBody?: boolean;
+  preserveApiErrorDetails?: boolean;
   query?: Record<string, string | number | boolean | null | undefined>;
 };
 
@@ -99,15 +103,15 @@ function buildApiError(payload: unknown, status: number, retryAfterHeader?: stri
     if (typeof d.code === "string") code = d.code;
     if (typeof d.message === "string") message = d.message;
     if (typeof d.retryable === "boolean") retryable = d.retryable;
-    if (typeof d.retry_after === "number") retry_after = d.retry_after;
+    if (typeof d.retry_after === "number" && Number.isFinite(d.retry_after) && d.retry_after >= 0) retry_after = d.retry_after;
     details = detail;
   } else if (typeof detail === "string") {
     message = detail;
   }
 
   if (retryAfterHeader) {
-    const parsed = parseInt(retryAfterHeader, 10);
-    if (Number.isFinite(parsed)) retry_after = parsed;
+    const parsed = parseRetryAfter(retryAfterHeader);
+    if (parsed !== null) retry_after = parsed;
   }
 
   const isRateLimited = status === 429;
@@ -130,16 +134,34 @@ async function singleFlightRefresh(): Promise<boolean> {
 
   const promise = (async (): Promise<boolean> => {
     try {
+      const refreshUrl = apiUrl("/auth/refresh");
+      const cooldownKey = `POST ${refreshUrl}`;
+      const browser = typeof window !== "undefined";
+      const revision = getSessionRevision();
+      const cooldown = browser && controlRevision === revision ? getCooldown(cooldownKey, `${new URL(refreshUrl).origin} scope:auth`) : undefined;
+      if (cooldown && cooldown.until > Date.now()) {
+        throw new ApiError("A renovação da sessão será retomada após a pausa solicitada pela API.", 429, cooldown.error.code, true, Math.ceil((cooldown.until - Date.now()) / 1000));
+      }
       const response = await fetch(apiUrl("/auth/refresh"), {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json" },
         credentials: "include",
       });
+      if (browser && revision !== getSessionRevision()) throw new DOMException("Sessão alterada", "AbortError");
       if (!response.ok) {
-        clearAccessToken();
-        return false;
+        if (response.status === 401 || response.status === 403) {
+          clearAccessToken();
+          return false;
+        }
+        if (response.status >= 500) throw new ApiUnavailableError();
+        let error = buildApiError(await parseResponse(response), response.status, response.headers.get("Retry-After"));
+        if (browser && response.status === 429 && revision === getSessionRevision()) {
+          error = recordCooldown(error, cooldownKey, refreshUrl);
+        }
+        throw error;
       }
       const payload = await response.json() as unknown;
+      if (browser && revision !== getSessionRevision()) throw new DOMException("Sessão alterada", "AbortError");
       const token =
         payload && typeof payload === "object" && "access_token" in payload
           ? String((payload as { access_token: unknown }).access_token)
@@ -150,9 +172,10 @@ async function singleFlightRefresh(): Promise<boolean> {
       }
       clearAccessToken();
       return false;
-    } catch {
-      clearAccessToken();
-      return false;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") throw error;
+      if (error instanceof ApiError || error instanceof ApiUnavailableError) throw error;
+      throw new ApiUnavailableError();
     }
   })();
 
@@ -183,8 +206,56 @@ function buildRequestHeaders(base?: HeadersInit, body?: unknown, isFormData?: bo
 // Função principal de request
 // ---------------------------------------------------------------------------
 
+const requestFlights = new RequestFlights();
+const cooldowns = new Map<string, { until: number; failures: number; error: ApiError }>();
+const routeScopes = new Map<string, string>();
+let controlRevision = -1;
+let mutationRevision = 0;
+
+function getCooldown(routeKey: string, scopeKey?: string) {
+  const scoped = scopeKey ? cooldowns.get(scopeKey) : undefined;
+  const local = cooldowns.get(routeKey);
+  return scoped && (!local || scoped.until > local.until) ? scoped : local;
+}
+
+function recordCooldown(error: ApiError, routeKey: string, url: string): ApiError {
+  const detail = error.details && typeof error.details === "object" ? error.details as Record<string, unknown> : null;
+  // Apenas cotas da API pausam outras rotas. Cooldown de loja fica local.
+  const scope = detail?.rate_limit_policy === "token_bucket" ? parseApiRateLimitScope(detail.rate_limit_scope) : null;
+  const key = scope ? `${new URL(url).origin} scope:${scope}` : routeKey;
+  if (scope) routeScopes.set(routeKey, scope);
+  const failures = (cooldowns.get(key)?.failures ?? 0) + 1;
+  const wait = retryDelayMs(failures - 1, error.retry_after);
+  const until = Math.max(cooldowns.get(key)?.until ?? 0, Date.now() + wait);
+  cooldowns.set(key, { until, failures, error });
+  return new ApiError(error.message, error.status, error.code, true, Math.ceil((until - Date.now()) / 1000), error.details);
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { body, headers, query, ...requestInit } = options;
+  const browser = typeof window !== "undefined";
+  const revision = getSessionRevision();
+  if (browser && controlRevision !== revision) {
+    cooldowns.clear();
+    routeScopes.clear();
+    controlRevision = revision;
+  }
+  const method = (options.method ?? "GET").toUpperCase();
+  const url = new URL(apiUrl(path, options.query));
+  const cooldownKey = `${method} ${url.origin}${url.pathname}`;
+  const task = (signal?: AbortSignal | null) => executeRequest<T>(path, { ...options, signal }, cooldownKey, revision, browser);
+  // Opcoes extras de Next e GETs com corpo nao sao compartilhados.
+  const supported = new Set(["method", "headers", "query", "signal", "cache", "discardResponseBody", "preserveApiErrorDetails"]);
+  if (browser && method === "GET" && options.body === undefined && Object.keys(options).every((key) => supported.has(key))) {
+    url.searchParams.sort();
+    const key = JSON.stringify([revision, mutationRevision, url.toString(), Array.from(buildRequestHeaders(options.headers).entries()).sort(), options.cache, options.discardResponseBody, options.preserveApiErrorDetails]);
+    return requestFlights.run(key, (signal) => task(signal), options.signal);
+  }
+  return task(options.signal);
+}
+
+async function executeRequest<T>(path: string, options: RequestOptions, cooldownKey: string, revision: number, browser: boolean): Promise<T> {
+  let activeRevision = revision;
+  const { body, headers, query, discardResponseBody, preserveApiErrorDetails, ...requestInit } = options;
   const isFormData = body instanceof FormData;
   // Evita loop infinito de refresh em endpoints de auth
   const isAuthEndpoint =
@@ -193,6 +264,16 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     path.includes("/auth/google");
 
   async function attempt(isRetry: boolean): Promise<T> {
+    requestInit.signal?.throwIfAborted();
+    if (browser && activeRevision !== getSessionRevision()) throw new DOMException("Sessão alterada", "AbortError");
+    if (browser) {
+      const url = new URL(apiUrl(path, query));
+      const scope = routeScopes.get(cooldownKey) ?? apiRateLimitScope((requestInit.method ?? "GET").toUpperCase(), path.split("?")[0]);
+      const cooldown = getCooldown(cooldownKey, scope ? `${url.origin} scope:${scope}` : undefined);
+      if (cooldown && cooldown.until > Date.now()) {
+        throw new ApiError("A API pediu uma pausa. Aguarde antes de tentar novamente.", 429, cooldown.error.code, true, Math.ceil((cooldown.until - Date.now()) / 1000), cooldown.error.details);
+      }
+    }
     const requestHeaders = buildRequestHeaders(headers, body, isFormData);
     let response: Response;
 
@@ -212,13 +293,30 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       );
     }
 
-    const payload = await parseResponse(response);
+    const payload = response.ok && discardResponseBody
+      ? undefined
+      : await parseResponse(response);
+    if (browser && activeRevision !== getSessionRevision()) throw new DOMException("Sessão alterada", "AbortError");
+    if (browser) {
+      const scope = parseApiRateLimitScope(response.headers.get("X-RateLimit-Scope"));
+      if (scope) routeScopes.set(cooldownKey, scope);
+    }
+    if (response.ok && discardResponseBody) {
+      await response.body?.cancel();
+    }
 
     // 401: tentar refresh uma única vez (nunca em endpoints de auth)
     if (response.status === 401) {
       if (!isAuthEndpoint && !isRetry) {
         const refreshed = await singleFlightRefresh();
-        if (refreshed) return attempt(true);
+        if (refreshed) {
+          activeRevision = getSessionRevision();
+          if (browser && controlRevision !== activeRevision) {
+            cooldowns.clear();
+            controlRevision = activeRevision;
+          }
+          return attempt(true);
+        }
       }
       // Refresh falhou ou segundo 401: limpar token e propagar erro
       clearAccessToken();
@@ -226,13 +324,26 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     }
 
     // 5xx → ApiUnavailableError
-    if (response.status >= 500) {
+    if (response.status >= 500 && !preserveApiErrorDetails) {
       throw new ApiUnavailableError();
     }
 
     // Qualquer outro erro HTTP → ApiError (401/403/404/409/422/429 NÃO viram ApiUnavailableError)
     if (!response.ok) {
-      throw buildApiError(payload, response.status, response.headers.get("Retry-After"));
+      let error = buildApiError(payload, response.status, response.headers.get("Retry-After"));
+      if (browser && activeRevision === getSessionRevision() && response.status === 429) {
+        error = recordCooldown(error, cooldownKey, apiUrl(path, query));
+      }
+      throw error;
+    }
+
+    if (browser && activeRevision === getSessionRevision()) {
+      cooldowns.delete(cooldownKey);
+      const scope = routeScopes.get(cooldownKey);
+      const scopeKey = `${new URL(apiUrl(path, query)).origin} scope:${scope}`;
+      const cooldown = cooldowns.get(scopeKey);
+      if (cooldown && cooldown.until <= Date.now()) cooldowns.delete(scopeKey);
+      if ((requestInit.method ?? "GET").toUpperCase() !== "GET") mutationRevision += 1;
     }
 
     return payload as T;

@@ -26,7 +26,7 @@ function formatWhen(iso: string): string {
  * Sino + painel da central persistente de notificações (topbar admin).
  */
 export function NotificationPanel() {
-  const { items, unreadCount, loading, refresh, markRead, markAllRead } = useNotifications();
+  const { items, unreadCount, loading, error, refresh, markRead, markAllRead } = useNotifications();
   const [open, setOpen] = useState(false);
   const [actionError, setActionError] = useState("");
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -96,7 +96,7 @@ export function NotificationPanel() {
           <header className="notification-panel-heading">
             <div>
               <p className="eyebrow">Notificações</p>
-              <strong>{unreadCount > 0 ? `${unreadCount} não lida(s)` : "Tudo lido"}</strong>
+              <strong>{loading || error ? "Central de notificações" : unreadCount > 0 ? `${unreadCount} não lida(s)` : "Tudo lido"}</strong>
             </div>
             {unreadCount > 0 && (
               <button className="text-button" type="button" onClick={() => void markAll()}>
@@ -105,10 +105,11 @@ export function NotificationPanel() {
             )}
           </header>
           {actionError && <p className="error-notice" role="alert">{actionError}</p>}
+          {error && <p className="error-notice" role="status">{error}</p>}
           {loading && items.length === 0 ? (
             <p className="notification-empty">Carregando...</p>
           ) : items.length === 0 ? (
-            <p className="notification-empty">Nenhuma notificação por enquanto.</p>
+            <p className="notification-empty">{error ? "Notificações indisponíveis no momento." : "Nenhuma notificação por enquanto."}</p>
           ) : (
             <ul className="notification-list">
               {items.map((item) => {

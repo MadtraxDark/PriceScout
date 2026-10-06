@@ -7,6 +7,25 @@ import {
   notificationTypeLabel,
 } from "./index.ts";
 import { getStoreDisplayName } from "../store-display.ts";
+import { imageAvailabilityView } from "./image-availability.ts";
+
+describe("imageAvailabilityView", () => {
+  it("uses a safe Portuguese label for each image state", () => {
+    for (const status of ["missing", "processing", "temporarily_unavailable", "permission_denied", "not_found", "storage_error", "invalid_reference", "load_failed"] as const) {
+      const view = imageAvailabilityView(status);
+      assert.equal(view.status, status);
+      assert.ok(view.message.length > 0);
+      assert.doesNotMatch(view.message, /_/);
+    }
+  });
+
+  it("permits retry only for retryable storage availability failures", () => {
+    assert.equal(imageAvailabilityView("temporarily_unavailable", true).retryable, true);
+    assert.equal(imageAvailabilityView("storage_error", true).retryable, true);
+    assert.equal(imageAvailabilityView("not_found", true).retryable, false);
+    assert.equal(imageAvailabilityView("permission_denied", true).retryable, false);
+  });
+});
 
 describe("matchDecisionLabel", () => {
   it("mapeia auto_match para label amigavel", () => {

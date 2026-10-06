@@ -55,6 +55,11 @@ export type ProductListingView = {
   promotion_price?: string | null;
   promotion_conditions?: Record<string, unknown>;
   promotion_commercially_active?: boolean;
+  /** Condição comercial normalizada (new/renewed/refurbished/used/open_box). */
+  condition?: string | null;
+  condition_grade?: string | null;
+  /** Operadora / lock comercial (ex.: Verizon), quando estruturado. */
+  carrier?: string | null;
   /** Valor de referência em BRL (somente FX). Null se indisponível. */
   converted_price_brl?: string | number | null;
   exchange_rate?: string | number | null;
@@ -76,6 +81,9 @@ export type ProductView = {
   listings: ProductListingView[];
   images?: ApiProductImageView[];
   primary_image_url?: string | null;
+  primary_image_status?: ImageAvailabilityStatus;
+  primary_image_error_code?: string | null;
+  primary_image_retryable?: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -97,6 +105,10 @@ export type ApiProductImageView = {
   original_url: string | null;
   optimized_url: string | null;
   display_url: string | null;
+  image_status?: ImageAvailabilityStatus;
+  image_error_code?: string | null;
+  image_retryable?: boolean;
+  image_warning_code?: string | null;
   original_status: string;
   optimized_status: string;
   original_width: number | null;
@@ -106,12 +118,24 @@ export type ApiProductImageView = {
   updated_at: string;
 };
 
+export type ImageAvailabilityStatus =
+  | "ready"
+  | "missing"
+  | "processing"
+  | "temporarily_unavailable"
+  | "permission_denied"
+  | "not_found"
+  | "storage_error"
+  | "invalid_reference"
+  | "load_failed";
+
 export type ApiProductImageListResponse = {
   items: ApiProductImageView[];
   count: number;
 };
 
 export type ProductRegisterRequest = {
+  images?: { source_url: string; position: number; is_main: boolean }[];
   title: string;
   brand?: string | null;
   model?: string | null;
@@ -420,6 +444,8 @@ export type OfferPriceHistory = {
 };
 
 export type CatalogOffer = {
+  match_decision?: string;
+  status?: string;
   id: string;
   catalog_product_variant_id: string;
   store_id: string;
@@ -447,6 +473,11 @@ export type CatalogOffer = {
   promotion_status?: string | null;
   promotion_commercially_active?: boolean;
   available?: boolean | null;
+  /** Condição comercial (new/renewed/refurbished/used/open_box). */
+  condition?: string | null;
+  condition_grade?: string | null;
+  /** Operadora quando relevante (Verizon, Unlocked, …). */
+  carrier?: string | null;
   /** Valor de referência em BRL = preço estrangeiro × cotação (sem impostos). */
   converted_price_brl?: number | null;
   exchange_rate?: number | null;
@@ -479,6 +510,10 @@ export type CatalogProductImage = {
   drive_original_id?: string | null;
   drive_avif_id?: string | null;
   error?: string | null;
+  image_status?: ImageAvailabilityStatus;
+  image_error_code?: string | null;
+  image_retryable?: boolean;
+  image_warning_code?: string | null;
 };
 
 export type CatalogProduct = {
@@ -499,6 +534,9 @@ export type CatalogProduct = {
   source: string;
   external_product_id: string;
   primary_image_url?: string | null;
+  primary_image_status?: ImageAvailabilityStatus;
+  primary_image_error_code?: string | null;
+  primary_image_retryable?: boolean;
   primary_image_id?: string | null;
   store?: { name: string; hostname: string } | null;
 };
@@ -647,6 +685,29 @@ export type MatchRunDetailView = {
   stores: MatchStoreRunView[];
 };
 
+export type MatchStoreLiveView = Pick<MatchStoreRunView,
+  "id" | "store" | "store_display_name" | "status" | "started_at" | "finished_at" |
+  "matched_url" | "matched_title" | "matched_price" | "matched_currency" |
+  "matched_confidence" | "error_code"
+> & {
+  matched_decision: "auto_match" | "review" | null;
+  matched_listing_id: string | null;
+  matched_store: string | null;
+  matched_country: string | null;
+  matched_product_id: string | null;
+  matched_canonical_url: string | null;
+  converted_price_brl: string | number | null;
+  exchange_rate_status: string | null;
+  exchange_rate_updated_at: string | null;
+};
+
+export type MatchRunLiveView = {
+  run: MatchRunStatusView;
+  is_effectively_active: boolean;
+  auto_matches_found: number;
+  stores: MatchStoreLiveView[];
+};
+
 export type NotificationView = {
   id: string;
   type: string;
@@ -679,6 +740,10 @@ export type ProductImage = {
   original_url?: string;
   sort_order: number;
   is_main?: boolean;
+  image_status?: ImageAvailabilityStatus;
+  image_error_code?: string | null;
+  image_retryable?: boolean;
+  image_warning_code?: string | null;
 };
 
 export type TaxonomyItem = {

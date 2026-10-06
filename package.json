@@ -11,6 +11,7 @@
     "test:images": "npx --yes tsx --test utils/api/product-images.test.ts",
     "test:match-run": "npx --yes tsx --test utils/match-run.test.ts",
     "test:display": "npx --yes tsx --test utils/display/display-labels.test.ts",
+    "test:requests": "npx --yes tsx --test utils/api/request-control.test.ts utils/api/client.test.ts utils/visible-polling.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

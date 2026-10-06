@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { gsap } from "gsap";
 import Link from "next/link";
@@ -8,8 +8,10 @@ import ShinyText from "@/components/ShinyText";
 import ImageViewer, { ImageWithState } from "@/components/ImageViewer";
 import StoreConfigurationForm, { storeLogoDataUrl as svgDataUrl } from "@/components/StoreConfigurationForm";
 import { catalogApi } from "@/utils/api/services";
-import { ApiError, apiUrl } from "@/utils/api/client";
+import { startVisiblePolling } from "@/utils/visible-polling";
+import { ApiError } from "@/utils/api/client";
 import { resolveMediaUrl } from "@/utils/api/product-images";
+import { imageAvailabilityView } from "@/utils/display/image-availability";
 import type { CatalogOverview as CatalogOverviewData, CatalogProduct, CatalogStore, ExistingCatalogProduct, ProductPreview } from "@/utils/api/contracts";
 import {
   defaultIncludeImagesForStore,
@@ -84,7 +86,7 @@ function formatCatalogDate(value?: string | null): string {
 
 const importStepDefinitions = [
   { id: "request", label: "Enviando a prévia aprovada..." },
-  { id: "processing", label: "Aguardando o processamento da API..." },
+  { id: "processing", label: "Salvando produto no catálogo..." },
   { id: "refresh", label: "Atualizando o catálogo..." },
 ] as const;
 
@@ -125,34 +127,27 @@ function Icon({ name }: { name: "grid" | "box" | "store" | "bell" | "plus" | "ar
 
 function Logo() { return <div className="logo"><span className="logo-mark"><span /></span><span>price<span className="logo-accent">scout</span></span></div>; }
 
-function MediaImage({ src, alt, className = "", fallback = "Imagem indisponível", showFallbackLabel = true }: { src: string; alt: string; className?: string; fallback?: string; showFallbackLabel?: boolean }) {
-  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const resolvedSrc = resolveMediaUrl(src) || "";
-  const imgRef = useRef<HTMLImageElement | null>(null);
-  useLayoutEffect(() => {
-    setStatus("loading");
-    const node = imgRef.current;
-    if (node?.complete) setStatus(node.naturalWidth > 0 ? "loaded" : "error");
-  }, [resolvedSrc]);
-  return <span className={`media-image ${className} ${status}`} aria-busy={status === "loading"}>
-    {status === "loading" && <span className="media-skeleton" aria-hidden="true" />}
-    {status === "error" || !resolvedSrc ? <span className="media-error"><span className="media-empty-badge"><Icon name="image" /></span>{showFallbackLabel && <span className="media-empty-label">{fallback}</span>}</span> : <img key={resolvedSrc} ref={imgRef} src={resolvedSrc} alt={alt} onLoad={() => setStatus("loaded")} onError={() => setStatus("error")} />}
-  </span>;
+function MediaImage({ src, alt, className = "", showFallbackLabel = true, availabilityStatus, retryable = false }: { src: string; alt: string; className?: string; showFallbackLabel?: boolean; availabilityStatus?: import("@/utils/api/contracts").ImageAvailabilityStatus; retryable?: boolean }) {
+  return <ImageWithState src={src} alt={alt} className={className} showFallbackLabel={showFallbackLabel} availabilityStatus={availabilityStatus} retryable={retryable} allowRetry={false} />;
 }
 
 function StoreLogo({ store }: { store: CatalogStore }) {
-  const [imgError, setImgError] = useState(false);
-  const [svgError, setSvgError] = useState(false);
-  const resolvedUrl = !imgError && store.logo_url ? resolveMediaUrl(store.logo_url) : null;
-  const svgUrl = !svgError && store.logo_svg ? svgDataUrl(store.logo_svg) : null;
+  const [driveFailure, setDriveFailure] = useState<ReturnType<typeof imageAvailabilityView> | null>(null);
+  const [svgFailure, setSvgFailure] = useState(false);
+  const resolvedUrl = store.logo_url ? resolveMediaUrl(store.logo_url) : null;
+  const svgUrl = store.logo_svg ? svgDataUrl(store.logo_svg) : null;
 
-  if (resolvedUrl) {
-    return <img src={resolvedUrl} alt={store.name} onError={() => setImgError(true)} />;
+  if (resolvedUrl && !driveFailure) {
+    return <ImageWithState src={resolvedUrl} alt={store.name} showFallbackLabel={false} allowRetry={false} onImageFailure={setDriveFailure} />;
   }
-  if (svgUrl) {
-    return <img src={svgUrl} alt={store.name} onError={() => setSvgError(true)} />;
+  if (svgUrl && !svgFailure) {
+    return <span className="store-logo-fallback" title={driveFailure?.message}>
+      <ImageWithState src={svgUrl} alt={store.name} showFallbackLabel={false} allowRetry={false} onImageFailure={() => setSvgFailure(true)} />
+      {driveFailure && <><span className="store-logo-warning-marker" aria-hidden="true">!</span><span className="sr-only" role="status">{driveFailure.message} Exibindo a versão vetorial de backup.</span></>}
+    </span>;
   }
-  return <Icon name="store" />;
+  const failureMessage = driveFailure?.message ?? (svgFailure ? imageAvailabilityView("load_failed").message : "Nenhuma logo cadastrada.");
+  return <span className="store-logo-unavailable" role="img" aria-label={failureMessage} title={failureMessage}><Icon name="store" /></span>;
 }
 
 const navItems: { id: View; label: string; icon: "grid" | "box" | "store" }[] = [
@@ -189,8 +184,7 @@ export default function Home() {
   const importPanelRef = useRef<HTMLDivElement | null>(null);
   const importSuccessRef = useRef<HTMLDivElement | null>(null);
   const previewRef = useRef<HTMLElement | null>(null);
-  const [includeImages, setIncludeImages] = useState(false);
-  const [includeImagesTouched, setIncludeImagesTouched] = useState(false);
+  const [includeImagesOverride, setIncludeImagesOverride] = useState<boolean | null>(null);
 
   const hasProcessingStoreLogo = catalogStores.some(
     (store) => store.logo_processing_status === "pending" || store.logo_processing_status === "processing",
@@ -198,21 +192,27 @@ export default function Home() {
 
   useEffect(() => {
     if (!hasProcessingStoreLogo) return;
-    let active = true;
-    const refreshStoreLogos = async () => {
-      try {
-        const result = await catalogApi.listStores();
-        if (active) setCatalogStores(result.stores ?? []);
-      } catch {
-        // A logo pendente continua sendo entregue na variante original.
-      }
-    };
-    const timer = window.setInterval(() => { void refreshStoreLogos(); }, 3000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
+    const polling = startVisiblePolling(async (signal) => {
+      const result = await catalogApi.listStores({ signal });
+      signal.throwIfAborted();
+      setCatalogStores(result.stores ?? []);
+    }, () => 3000, undefined, 3000);
+    return () => polling.stop();
   }, [hasProcessingStoreLogo]);
+  const hasPendingProductImages = catalogProducts.some((product) => product.images.some((image) =>
+    image.original_status === "pending" || image.original_status === "downloading"
+    || image.optimized_status === "pending" || image.optimized_status === "processing",
+  ));
+  useEffect(() => {
+    if (!hasPendingProductImages) return;
+    const polling = startVisiblePolling(async (signal) => {
+      const result = await catalogApi.listProducts({ signal });
+      signal.throwIfAborted();
+      setCatalogProducts(result.products);
+    }, () => 3000, undefined, 3000);
+    return () => polling.stop();
+  }, [hasPendingProductImages]);
+
   const matchedStore = useMemo(() => {
     const parsed = parseHttpUrl(productUrl);
     if (!parsed) return null;
@@ -222,10 +222,7 @@ export default function Home() {
     );
   }, [productUrl, catalogStores]);
 
-  useEffect(() => {
-    if (includeImagesTouched) return;
-    setIncludeImages(defaultIncludeImagesForStore(matchedStore));
-  }, [matchedStore, includeImagesTouched]);
+  const includeImages = includeImagesOverride ?? defaultIncludeImagesForStore(matchedStore);
 
   useEffect(() => {
     if (!importing || !importPanelRef.current) return;
@@ -438,7 +435,7 @@ export default function Home() {
 
   function changeProductUrl(value: string) {
     setProductUrl(value);
-    setIncludeImagesTouched(false);
+    setIncludeImagesOverride(null);
     if (value !== reviewedUrl) {
       setExistingProductId(null);
       setDuplicateProduct(null);
@@ -492,7 +489,7 @@ export default function Home() {
 
   return <main className="admin-shell">
     <aside className="sidebar"><div className="sidebar-top"><Logo /><span className="admin-badge">admin</span></div><nav className="main-nav" aria-label="Navegação principal"><p className="nav-label">Workspace</p>{navItems.map((item) => <button key={item.id} className={`nav-item ${view === item.id ? "active" : ""}`} onClick={() => openView(item.id)}><Icon name={item.icon} /><span>{item.label}</span>{item.id === "overview" && <span className="nav-arrow"><Icon name="arrow" /></span>}</button>)}</nav><div className="sidebar-note"><span className="live-dot" /><div><strong>API conectada</strong><span>Operações centralizadas</span></div></div><div className="sidebar-bottom"><div className="user-profile"><span className="avatar">--</span><span><strong>Conta administrativa</strong><small>Identidade não carregada</small></span></div></div></aside>
-    <section className="content-shell"><header className="topbar"><div className="mobile-logo"><Logo /></div><div className="search-box"><Icon name="search" /><input aria-label="Buscar no PriceScout" placeholder="Buscar no catálogo" /></div><div className="topbar-actions"><NotificationPanel /><div className="topbar-divider" /><span className="environment">API externa</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <Overview openView={openView} /> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : view === "stores" ? <CatalogView kind="stores" products={catalogProducts} stores={catalogStores} loading={catalogLoading} onEditStore={setEditingStore} /> : <FormView notice={notice} onSubmit={submitProduct} productUrl={productUrl} onProductUrlChange={changeProductUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} existingProductId={existingProductId} duplicateProduct={duplicateProduct} approvedPreview={approvedPreview} onApprove={approvePreview} progressMessage={progressMessagesForPreview(includeImages)[progressIndex] ?? "Preparando preview..."} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} matchedStore={matchedStore} includeImages={includeImages} onIncludeImagesChange={(value) => { setIncludeImagesTouched(true); setIncludeImages(value); }} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}{editingStore && <div className="store-editor-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingStore(null); }}><section className="store-editor" role="dialog" aria-modal="true" aria-labelledby="store-editor-title"><div className="store-editor-heading"><div className="store-editor-header-text"><div className="store-editor-kicker"><Icon name="store" /><span>Loja cadastrada</span></div><h2 id="store-editor-title">Editar loja</h2></div><button className="store-editor-close lightbox-close" type="button" onClick={() => setEditingStore(null)} aria-label="Fechar edição"><Icon name="close" /></button></div><StoreConfigurationForm store={editingStore} onCancel={() => setEditingStore(null)} onSave={saveStore} /></section></div>}</section>
+    <section className="content-shell"><header className="topbar"><div className="mobile-logo"><Logo /></div><div className="search-box"><Icon name="search" /><input aria-label="Buscar no PriceScout" placeholder="Buscar no catálogo" /></div><div className="topbar-actions"><NotificationPanel /><div className="topbar-divider" /><span className="environment">API externa</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <Overview openView={openView} /> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : view === "stores" ? <CatalogView kind="stores" products={catalogProducts} stores={catalogStores} loading={catalogLoading} onEditStore={setEditingStore} /> : <FormView notice={notice} onSubmit={submitProduct} productUrl={productUrl} onProductUrlChange={changeProductUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} existingProductId={existingProductId} duplicateProduct={duplicateProduct} approvedPreview={approvedPreview} onApprove={approvePreview} progressMessage={progressMessagesForPreview(includeImages)[progressIndex] ?? "Preparando preview..."} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} matchedStore={matchedStore} includeImages={includeImages} onIncludeImagesChange={(value) => { setIncludeImagesOverride(value); }} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}{editingStore && <div className="store-editor-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingStore(null); }}><section className="store-editor" role="dialog" aria-modal="true" aria-labelledby="store-editor-title"><div className="store-editor-heading"><div className="store-editor-header-text"><div className="store-editor-kicker"><Icon name="store" /><span>Loja cadastrada</span></div><h2 id="store-editor-title">Editar loja</h2></div><button className="store-editor-close lightbox-close" type="button" onClick={() => setEditingStore(null)} aria-label="Fechar edição"><Icon name="close" /></button></div><StoreConfigurationForm store={editingStore} onCancel={() => setEditingStore(null)} onSave={saveStore} /></section></div>}</section>
   </main>;
 }
 
@@ -519,7 +516,7 @@ function money(value: number | null) {
 function CatalogView({ kind, openView, products, stores, loading, onEditStore = () => undefined }: { kind: "products" | "stores"; openView?: (view: View) => void; products: CatalogProduct[]; stores: CatalogStore[]; loading: boolean; onEditStore?: (store: CatalogStore) => void }) {
   const isProducts = kind === "products";
   const rows = isProducts ? products : stores;
-  return <div className="catalog-page"><div className="page-intro"><div><p className="eyebrow">Catálogo</p><h1>{isProducts ? "Produtos cadastrados." : "Lojas cadastradas."}</h1><p className="intro-copy">{isProducts ? "Identifique rapidamente cada produto pela imagem e pelo nome." : "Consulte as lojas e sites confirmados como fontes oficiais."}</p></div>{isProducts && openView && <button className="primary-button" onClick={() => openView("product")}><Icon name="plus" /> Adicionar produto</button>}</div>{loading ? <section className="empty-state"><h2>Carregando registros...</h2></section> : rows.length === 0 ? <section className="empty-state"><span className="empty-icon"><Icon name={isProducts ? "box" : "store"} /></span><h2>Nenhum registro disponível</h2><p>{isProducts ? "Os produtos aparecerão aqui depois que forem cadastrados e aprovados." : "As lojas pré-cadastradas aparecerão aqui quando estiverem disponíveis."}</p>{isProducts && openView && <button className="outline-button" onClick={() => openView("product")}><Icon name="plus" /> Cadastrar produto</button>}</section> : isProducts ? <section className="catalog-grid" aria-label="Produtos cadastrados">{products.map((product) => { const firstOffer = product.variants.flatMap((variant) => variant.offers)[0]; const image = product.primary_image_url ?? product.images.find((item) => item.is_main)?.display_url ?? product.images[0]?.display_url ?? null; const offerUrl = firstOffer?.canonical_url ?? null; return <article className="catalog-card" key={product.id}><Link className="catalog-card-manage" href={`/admin/produtos/${product.id}`} aria-label={`Gerenciar ${product.canonical_name}`}><div className="catalog-card-media">{image ? <MediaImage key={image} src={image} alt="" className="catalog-media-image" /> : <span className="catalog-card-media-empty"><span className="media-empty-badge"><Icon name="image" /></span><span className="media-empty-label">Imagem indisponível</span></span>}</div><div className="catalog-card-body"><h2>{product.canonical_name}</h2><span className="catalog-card-link">Gerenciar produto <Icon name="arrow" /></span></div></Link>{offerUrl ? <a className="catalog-card-source" href={offerUrl} target="_blank" rel="noreferrer">Abrir origem <Icon name="external" /></a> : <span className="catalog-card-source">Oferta sem URL disponível</span>}</article>; })}</section> : <section className="catalog-list">{stores.map((store) => <article className="catalog-row" key={store.id}><div className="catalog-row-icon"><StoreLogo store={store} /></div><div className="catalog-row-main"><strong>{store.name}</strong><span>{store.hostname}</span>{store.match_enabled === false ? <small className="store-match-disabled">Comparação temporariamente indisponível{store.match_disabled_reason ? ` (${store.match_disabled_reason})` : ""}</small> : null}</div><div className="catalog-row-meta"><b>{store.productCount} {store.productCount === 1 ? "produto" : "produtos"}</b><span>{store.country} · {store.currency}</span></div><button className="catalog-row-edit" type="button" onClick={() => onEditStore(store)} aria-label={`Editar ${store.name}`}><Icon name="pencil" /></button><a className="catalog-row-link" href={store.url} target="_blank" rel="noreferrer" aria-label={`Abrir ${store.name}`}><Icon name="external" /></a></article>)}</section>}</div>;
+  return <div className="catalog-page"><div className="page-intro"><div><p className="eyebrow">Catálogo</p><h1>{isProducts ? "Produtos cadastrados." : "Lojas cadastradas."}</h1><p className="intro-copy">{isProducts ? "Identifique rapidamente cada produto pela imagem e pelo nome." : "Consulte as lojas e sites confirmados como fontes oficiais."}</p></div>{isProducts && openView && <button className="primary-button" onClick={() => openView("product")}><Icon name="plus" /> Adicionar produto</button>}</div>{loading ? <section className="empty-state"><h2>Carregando registros...</h2></section> : rows.length === 0 ? <section className="empty-state"><span className="empty-icon"><Icon name={isProducts ? "box" : "store"} /></span><h2>Nenhum registro disponível</h2><p>{isProducts ? "Os produtos aparecerão aqui depois que forem cadastrados e aprovados." : "As lojas pré-cadastradas aparecerão aqui quando estiverem disponíveis."}</p>{isProducts && openView && <button className="outline-button" onClick={() => openView("product")}><Icon name="plus" /> Cadastrar produto</button>}</section> : isProducts ? <section className="catalog-grid" aria-label="Produtos cadastrados">{products.map((product) => { const firstOffer = product.variants.flatMap((variant) => variant.offers)[0]; const image = product.primary_image_url ?? product.images.find((item) => item.is_main)?.display_url ?? product.images[0]?.display_url ?? null; const noImageMessage = imageAvailabilityView(product.primary_image_status ?? "missing").message; const offerUrl = firstOffer?.canonical_url ?? null; return <article className="catalog-card" key={product.id}><Link className="catalog-card-manage" href={`/admin/produtos/${product.id}`} aria-label={`Gerenciar ${product.canonical_name}`}><div className="catalog-card-media">{image ? <MediaImage key={image} src={image} alt="" className="catalog-media-image" /> : <span className="catalog-card-media-empty" role="status"><span className="media-empty-badge"><Icon name="image" /></span><span className="media-empty-label">{noImageMessage}</span></span>}</div><div className="catalog-card-body"><h2>{product.canonical_name}</h2><span className="catalog-card-link">Gerenciar produto <Icon name="arrow" /></span></div></Link>{offerUrl ? <a className="catalog-card-source" href={offerUrl} target="_blank" rel="noreferrer">Abrir origem <Icon name="external" /></a> : <span className="catalog-card-source">Oferta sem URL disponível</span>}</article>; })}</section> : <section className="catalog-list">{stores.map((store) => <article className="catalog-row" key={store.id}><div className="catalog-row-icon"><StoreLogo store={store} /></div><div className="catalog-row-main"><strong>{store.name}</strong><span>{store.hostname}</span>{store.match_enabled === false ? <small className="store-match-disabled">Comparação temporariamente indisponível{store.match_disabled_reason ? ` (${store.match_disabled_reason})` : ""}</small> : null}</div><div className="catalog-row-meta"><b>{store.productCount} {store.productCount === 1 ? "produto" : "produtos"}</b><span>{store.country} · {store.currency}</span></div><button className="catalog-row-edit" type="button" onClick={() => onEditStore(store)} aria-label={`Editar ${store.name}`}><Icon name="pencil" /></button><a className="catalog-row-link" href={store.url} target="_blank" rel="noreferrer" aria-label={`Abrir ${store.name}`}><Icon name="external" /></a></article>)}</section>}</div>;
 }
 
 function FormView({ notice, onSubmit, productUrl, onProductUrlChange, scrapeStatus, scrapedProduct, scrapeError, existingProductId, duplicateProduct, approvedPreview, onApprove, progressMessage, previewVisible, onRevealPreview, previewRef, importing, importSteps, importError, importPanelRef, importSuccessRef, matchedStore, includeImages, onIncludeImagesChange }: { notice: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; productUrl: string; onProductUrlChange: (value: string) => void; scrapeStatus: ScrapeStatus; scrapedProduct: ProductPreview | null; scrapeError: string; existingProductId: string | null; duplicateProduct: ExistingCatalogProduct | null; approvedPreview: boolean; onApprove: () => void; progressMessage: string; previewVisible: boolean; onRevealPreview: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; importSteps: ImportStep[]; importError: string; importPanelRef: RefObject<HTMLDivElement | null>; importSuccessRef: RefObject<HTMLDivElement | null>; matchedStore: StoreCapability | null; includeImages: boolean; onIncludeImagesChange: (value: boolean) => void }) {

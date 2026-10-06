@@ -2,11 +2,13 @@
 
 export function ProductMatchBanner({
   starting = false,
+  recovering = false,
   elapsed,
   storesCompleted,
   storesTotal,
 }: {
   starting?: boolean;
+  recovering?: boolean;
   elapsed: string;
   storesCompleted?: number;
   storesTotal?: number;
@@ -21,7 +23,7 @@ export function ProductMatchBanner({
       <span className="match-run-banner-pulse" aria-hidden="true" />
       <div>
         <strong>
-          {starting
+          {recovering ? "Aguardando recuperação da busca em outras lojas" : starting
             ? "Solicitando início da busca em outras lojas..."
             : `Busca de produto em outras lojas em andamento: ${elapsed}`}
         </strong>

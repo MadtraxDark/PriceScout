@@ -19,6 +19,7 @@ import type {
   MatchRequest,
   MatchResponse,
   MatchRunDetailView,
+  MatchRunLiveView,
   MatchRunListResponse,
   MatchRunStatusView,
   NotificationListResponse,
@@ -92,6 +93,8 @@ function listingToCatalogOffer(
     catalog_product_variant_id: productId,
     store_id: storeKey,
     source: storeKey,
+    status: listing.status,
+    match_decision: listing.match_decision,
     external_product_id: listing.product_id,
     canonical_url: listing.canonical_url,
     seller: listing.seller ?? null,
@@ -119,6 +122,9 @@ function listingToCatalogOffer(
     promotion_status: listing.promotion_status ?? null,
     promotion_commercially_active: promoActive,
     available: listing.available ?? null,
+    condition: listing.condition ?? null,
+    condition_grade: listing.condition_grade ?? null,
+    carrier: listing.carrier ?? null,
     converted_price_brl: toNumber(listing.converted_price_brl),
     exchange_rate: toNumber(listing.exchange_rate),
     exchange_rate_type: listing.exchange_rate_type ?? null,
@@ -175,6 +181,9 @@ function productViewToCatalogProduct(
     source: firstListing?.store ?? "",
     external_product_id: firstListing?.product_id ?? "",
     primary_image_url: primaryUrl,
+    primary_image_status: view.primary_image_status,
+    primary_image_error_code: view.primary_image_error_code,
+    primary_image_retryable: view.primary_image_retryable,
     primary_image_id: mainImage?.image_id ?? null,
     store: firstListing ? { name: firstListing.store, hostname: "" } : null,
   };
@@ -400,6 +409,7 @@ export const authApi = {
    * GET /auth/google → {authorization_url} → redireciona o browser.
    */
   async startGoogleLogin(_nextPath?: string): Promise<string> {
+    void _nextPath;
     if (!hasApiConfiguration()) throw new Error("Conexao com a API nao configurada.");
     const result = await api.get<{ authorization_url: string }>("/auth/google");
     return result.authorization_url;
@@ -407,6 +417,7 @@ export const authApi = {
 
   /** URL imediata para OAuth (sem fetch, para uso em href). */
   signInUrl(_nextPath: string): string | null {
+    void _nextPath;
     if (!hasApiConfiguration()) return null;
     try {
       return apiUrl("/auth/google");
@@ -433,8 +444,8 @@ export const authApi = {
   },
 
   /** GET /auth/me — confirma identidade. Requer Bearer. */
-  async me(): Promise<AuthUserResponse> {
-    const user = await api.get<PublicUser>("/auth/me");
+  async me(options: { signal?: AbortSignal } = {}): Promise<AuthUserResponse> {
+    const user = await api.get<PublicUser>("/auth/me", options);
     return {
       user: { id: user.id, name: user.display_name, email: null },
       is_admin: false,
@@ -502,10 +513,11 @@ export const catalogApi = {
   // -------------------------------------------------------------------------
   // Listagem de produtos — GET /products
   // -------------------------------------------------------------------------
-  async listProducts(): Promise<{ products: CatalogProduct[] }> {
+  async listProducts(options: { signal?: AbortSignal } = {}): Promise<{ products: CatalogProduct[] }> {
     const result = await api.get<ProductListResponse>("/products", {
       query: { limit: 100, offset: 0 },
       cache: "no-store",
+      signal: options.signal,
     } as Parameters<typeof api.get>[1]);
     return { products: (result.items ?? []).map((view) => productViewToCatalogProduct(view)) };
   },
@@ -524,10 +536,10 @@ export const catalogApi = {
     return productViewToCatalogProduct(view, gallery);
   },
 
-  async listProductImages(id: string): Promise<CatalogProductImage[]> {
+  async listProductImages(id: string, signal?: AbortSignal): Promise<CatalogProductImage[]> {
     const result = await api.get<ApiProductImageListResponse>(
       `/products/${encodeURIComponent(id)}/images`,
-      { cache: "no-store" } as Parameters<typeof api.get>[1],
+      { cache: "no-store", signal } as Parameters<typeof api.get>[1],
     );
     return (result.items ?? []).map(apiImageToCatalogImage);
   },
@@ -548,6 +560,7 @@ export const catalogApi = {
 
   /** Stub de compatibilidade — lança para acionar fallback local. */
   async getPreview(_previewId: string): Promise<ProductPreviewResponse> {
+    void _previewId;
     throw new ApiError("Preview nao disponivel no servidor.", 404, "PREVIEW_NOT_FOUND");
   },
 
@@ -564,6 +577,7 @@ export const catalogApi = {
     product: ProductPreview,
     _previewId?: string,
   ): Promise<{ product: CatalogProduct; message?: string }> {
+    void _previewId;
     const body: ProductRegisterRequest = {
       title: product.name ?? "Produto sem nome",
       brand: product.brand,
@@ -584,28 +598,19 @@ export const catalogApi = {
       seller: product.seller,
       available: true,
     };
+    const approvedImageUrls = Array.from(new Set((product.images ?? [])
+      .map((image) => image.url?.trim())
+      .filter((url): url is string => Boolean(url))));
+    body.images = approvedImageUrls.slice(0, 20)
+      .map((source_url, position) => ({ source_url, position, is_main: position === 0 }));
     const result = await api.post<ProductRegisterResponse>("/products", body);
-    const catalog = productViewToCatalogProduct(result.product);
-    // Persistir imagens aprovadas do preview quando houver URLs.
-    const previewUrls = (product.images ?? [])
-      .map((image) => image.url)
-      .filter((url): url is string => Boolean(url?.trim()));
-    if (previewUrls.length > 0) {
-      try {
-        for (let index = 0; index < previewUrls.length; index += 1) {
-          await this.addProductImage(catalog.id, previewUrls[index], {
-            position: index,
-            is_main: index === 0,
-          });
-        }
-      } catch {
-        // Cadastro do produto já ocorreu; falha de imagem não reverte o import.
-      }
-    }
-    const withImages = await this.getProduct(catalog.id);
     return {
-      product: withImages,
-      message: result.created ? "Produto cadastrado." : "Produto reutilizado.",
+      product: productViewToCatalogProduct(result.product),
+      message: body.images.length
+        ? approvedImageUrls.length > 20
+          ? `Produto salvo. As primeiras 20 de ${approvedImageUrls.length} imagens serão processadas em segundo plano (limite do catálogo).`
+          : "Produto salvo. As imagens serão processadas em segundo plano."
+        : result.created ? "Produto cadastrado." : "Produto reutilizado.",
     };
   },
 
@@ -636,9 +641,10 @@ export const catalogApi = {
   // -------------------------------------------------------------------------
   // Lojas — GET /stores (somente leitura)
   // -------------------------------------------------------------------------
-  async listStores(): Promise<{ stores: CatalogStore[] }> {
+  async listStores(options: { signal?: AbortSignal } = {}): Promise<{ stores: CatalogStore[] }> {
     const result = await api.get<{ stores: StoreInfo[] }>("/stores", {
       cache: "no-store",
+      signal: options.signal,
     } as Parameters<typeof api.get>[1]);
     return { stores: (result.stores ?? []).map(storeInfoToCatalogStore) };
   },
@@ -737,36 +743,42 @@ export const catalogApi = {
   // -------------------------------------------------------------------------
   // Match Run persistente — POST/GET (polling; substitui SSE)
   // -------------------------------------------------------------------------
-  async startMatchRun(productId: string): Promise<MatchRunStatusView> {
+  async startMatchRun(productId: string, signal?: AbortSignal): Promise<MatchRunStatusView> {
     return api.post<MatchRunStatusView>(
       `/products/${encodeURIComponent(productId)}/match-runs`,
+      undefined, { signal },
     );
   },
 
-  async getActiveMatchRun(productId: string): Promise<MatchRunStatusView | null> {
+  async getActiveMatchRun(productId: string, signal?: AbortSignal): Promise<MatchRunStatusView | null> {
     const result = await api.get<MatchRunStatusView | undefined>(
       `/products/${encodeURIComponent(productId)}/match-runs/active`,
-      { cache: "no-store" } as Parameters<typeof api.get>[1],
+      { cache: "no-store", signal },
     );
     return result ?? null;
   },
 
-  async getMatchRun(runId: string): Promise<MatchRunStatusView> {
+  async getMatchRunLive(runId: string, signal?: AbortSignal): Promise<MatchRunLiveView> {
+    return api.get<MatchRunLiveView>(`/match-runs/${encodeURIComponent(runId)}/live`, { cache: "no-store", signal });
+  },
+
+  async getMatchRun(runId: string, signal?: AbortSignal): Promise<MatchRunStatusView> {
     return api.get<MatchRunStatusView>(
       `/match-runs/${encodeURIComponent(runId)}`,
-      { cache: "no-store" } as Parameters<typeof api.get>[1],
+      { cache: "no-store", signal },
     );
   },
 
   async listMatchRuns(
     productId: string,
-    options: { limit?: number; offset?: number } = {},
+    options: { limit?: number; offset?: number; signal?: AbortSignal } = {},
   ): Promise<MatchRunListResponse> {
     return api.get<MatchRunListResponse>(
       `/products/${encodeURIComponent(productId)}/match-runs`,
       {
         query: { limit: options.limit ?? 20, offset: options.offset ?? 0 },
         cache: "no-store",
+        signal: options.signal,
       } as Parameters<typeof api.get>[1],
     );
   },
@@ -796,6 +808,7 @@ export const notificationsApi = {
     limit?: number;
     offset?: number;
     unreadOnly?: boolean;
+    signal?: AbortSignal;
   } = {}): Promise<NotificationListResponse> {
     return api.get<NotificationListResponse>("/notifications", {
       query: {
@@ -804,6 +817,7 @@ export const notificationsApi = {
         unread_only: options.unreadOnly ?? false,
       },
       cache: "no-store",
+      signal: options.signal,
     } as Parameters<typeof api.get>[1]);
   },
 

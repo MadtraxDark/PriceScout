@@ -3,6 +3,7 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import type { CatalogStore } from "@/utils/api/contracts";
 import { resolveMediaUrl } from "@/utils/api/product-images";
+import { ImageWithState } from "@/components/ImageViewer";
 
 export type StoreConfigurationValues = {
   name: string;
@@ -107,7 +108,6 @@ export default function StoreConfigurationForm({
   const [logoSvg, setLogoSvg] = useState(store.logo_svg ?? "");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState(() => persistedLogoPreview(store));
-  const [previewError, setPreviewError] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const objectUrlRef = useRef<string | null>(null);
@@ -135,7 +135,6 @@ export default function StoreConfigurationForm({
     setLogoFile(null);
     setLogoSvg(store.logo_svg ?? "");
     setLogoPreview(persistedLogoPreview(store));
-    setPreviewError(false);
     setError("");
   }
 
@@ -186,7 +185,6 @@ export default function StoreConfigurationForm({
     setLogoFile(file);
     setLogoSvg("");
     setLogoPreview(nextObjectUrl);
-    setPreviewError(false);
     setError("");
     if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl);
   }
@@ -315,16 +313,10 @@ export default function StoreConfigurationForm({
 
         <div className="store-logo-preview-column">
           <div
-            className={`store-logo-preview store-logo-preview-frame ${
-              logoPreview && !previewError ? "has-logo" : "is-empty"
-            }`}
+            className={`store-logo-preview store-logo-preview-frame ${logoPreview ? "has-logo" : "is-empty"}`}
           >
-            {logoPreview && !previewError ? (
-              <img
-                src={logoPreview}
-                alt="Prévia da logo da loja"
-                onError={() => setPreviewError(true)}
-              />
+            {logoPreview ? (
+              <ImageWithState src={logoPreview} alt="Prévia da logo da loja" />
             ) : (
               <div className="store-logo-empty-state">
                 <FormIcon name="image" />

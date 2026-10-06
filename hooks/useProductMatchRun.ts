@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { catalogApi } from "@/utils/api/services";
-import type { MatchRunStatus, MatchRunStatusView } from "@/utils/api/contracts";
+import type { MatchRunLiveView, MatchStoreLiveView, MatchRunStatusView } from "@/utils/api/contracts";
 import {
   elapsedSecondsSince,
   formatElapsedHhMmSs,
@@ -13,11 +13,12 @@ import {
   getMatchRunError,
   matchRunErrorReducer,
 } from "@/utils/match-run";
+import { startVisiblePolling } from "@/utils/visible-polling";
+import { reconcileLiveSnapshot } from "@/utils/match-run-live";
 import { playMatchCompleteSound } from "@/utils/match-sound";
 
 const POLL_INTERVAL_MS = 4000;
 const ELAPSED_TICK_MS = 1000;
-const RATE_LIMIT_BACKOFF_MS = 15_000;
 
 /** Deduplica toast/som por run_id na sessão do browser. */
 const toastedRunIds = new Set<string>();
@@ -48,6 +49,10 @@ function notifyTerminalTransition(run: MatchRunStatusView): void {
 
 export type UseProductMatchRunResult = {
   activeRun: MatchRunStatusView | null;
+  observedRun: MatchRunStatusView | null;
+  liveResults: MatchStoreLiveView[];
+  storeProgress: MatchStoreLiveView[];
+  isRecovering: boolean;
   isActive: boolean;
   isStarting: boolean;
   elapsedLabel: string;
@@ -56,196 +61,164 @@ export type UseProductMatchRunResult = {
   refreshActive: () => Promise<void>;
 };
 
-/**
- * Observa Match Run ativa do produto via polling.
- * Abort no unmount cancela apenas o ciclo de polling — nunca a Run no backend.
- */
+/** Cancela somente observação; a Run pertence ao worker PostgreSQL. */
 export function useProductMatchRun(
   productId: string,
-  options: { onTerminal?: (run: MatchRunStatusView) => void } = {},
+  options: { onTerminal?: (run: MatchRunStatusView) => void | Promise<void> } = {},
 ): UseProductMatchRunResult {
-  const [activeRun, setActiveRun] = useState<MatchRunStatusView | null>(null);
-  const [isStarting, setIsStarting] = useState(false);
+  const [snapshot, setSnapshot] = useState<MatchRunLiveView | null>(null);
+  const [startingRequest, setStartingRequest] = useState<{ productId: string; epoch: number } | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [errorState, dispatchError] = useReducer(matchRunErrorReducer, {
-    startError: "",
-    pollError: "",
-  });
-
-  const previousStatusRef = useRef<MatchRunStatus | null>(null);
-  const watchingRunIdRef = useRef<string | null>(null);
+  const [errorState, dispatchError] = useReducer(matchRunErrorReducer, { startError: "", pollError: "" });
+  const observedRef = useRef<MatchRunLiveView | null>(null);
+  const watchingIdRef = useRef<string | null>(null);
+  const recoveredHistoryRef = useRef(false);
   const startInFlightRef = useRef(false);
+  const generationRef = useRef(0);
+  const startEpochRef = useRef(0);
+  const controllerRef = useRef<AbortController | null>(null);
+  const terminalSeenRef = useRef(new Set<string>());
   const onTerminalRef = useRef(options.onTerminal);
-  const rateLimitedUntilRef = useRef(0);
+  const pollingRef = useRef<ReturnType<typeof startVisiblePolling> | null>(null);
+  useEffect(() => { onTerminalRef.current = options.onTerminal; }, [options.onTerminal]);
 
-  useEffect(() => {
-    onTerminalRef.current = options.onTerminal;
-  }, [options.onTerminal]);
-
-  const handleSnapshot = useCallback((run: MatchRunStatusView | null) => {
-    if (!run) {
-      setActiveRun(null);
-      previousStatusRef.current = null;
-      watchingRunIdRef.current = null;
-      return;
-    }
-
-    const previous = previousStatusRef.current;
-    const wasActive = previous === "pending" || previous === "running";
-    const isTerminal = isTerminalMatchRunStatus(run.status);
-
-    watchingRunIdRef.current = run.id;
-
-    if (wasActive && isTerminal) {
-      notifyTerminalTransition(run);
-      onTerminalRef.current?.(run);
-      setActiveRun(null);
-      previousStatusRef.current = null;
-      watchingRunIdRef.current = null;
-      return;
-    }
-
-    if (isActiveMatchRunStatus(run.status)) {
-      previousStatusRef.current = run.status;
-      setActiveRun(run);
-      return;
-    }
-
-    // Terminal sem ter observado ativo nesta sessão — sem toast.
-    setActiveRun(null);
-    previousStatusRef.current = null;
-    watchingRunIdRef.current = null;
-  }, []);
-
-  const poll = useCallback(async () => {
-    if (!productId) return;
-    if (Date.now() < rateLimitedUntilRef.current) return;
-    try {
-      const active = await catalogApi.getActiveMatchRun(productId);
-      if (active) {
-        if (!isValidActiveMatchRun(active, productId)) {
-          throw new Error("A API retornou um estado inválido para a busca ativa.");
-        }
-        handleSnapshot(active);
-        dispatchError({ type: "poll_succeeded" });
-        return;
-      }
-
-      const watchingId = watchingRunIdRef.current;
-      const previous = previousStatusRef.current;
-      if (watchingId && (previous === "pending" || previous === "running")) {
-        const terminal = await catalogApi.getMatchRun(watchingId);
-        handleSnapshot(terminal);
-        dispatchError({ type: "poll_succeeded" });
-        return;
-      }
-
-      if (watchingRunIdRef.current || previousStatusRef.current) {
-        handleSnapshot(null);
-      }
-      dispatchError({ type: "poll_succeeded" });
-    } catch (pollError) {
-      if (pollError instanceof DOMException && pollError.name === "AbortError") return;
-      const status =
-        pollError && typeof pollError === "object" && "status" in pollError
-          ? Number((pollError as { status: unknown }).status)
-          : null;
-      const retryAfter =
-        pollError && typeof pollError === "object" && "retry_after" in pollError
-          ? Number((pollError as { retry_after: unknown }).retry_after)
-          : null;
-      if (status === 429) {
-        const waitMs =
-          Number.isFinite(retryAfter) && (retryAfter as number) > 0
-            ? Math.min(60_000, Math.max(5_000, (retryAfter as number) * 1000))
-            : RATE_LIMIT_BACKOFF_MS;
-        rateLimitedUntilRef.current = Date.now() + waitMs;
-        return;
-      }
-      dispatchError({
-        type: "poll_failed",
-        message: pollError instanceof Error ? pollError.message : "Não foi possível consultar a busca ativa.",
+  const applySnapshot = useCallback((next: MatchRunLiveView) => {
+    if (next.run.product_id !== productId) throw new Error("A API retornou uma busca de outro produto.");
+    const generation = generationRef.current;
+    const previous = observedRef.current;
+    const merged = reconcileLiveSnapshot(previous, next);
+    observedRef.current = merged;
+    watchingIdRef.current = next.run.id;
+    setSnapshot(merged);
+    if (isTerminalMatchRunStatus(next.run.status) && !terminalSeenRef.current.has(next.run.id)) {
+      terminalSeenRef.current.add(next.run.id);
+      if (previous?.run.id === next.run.id && isActiveMatchRunStatus(previous.run.status)) notifyTerminalTransition(next.run);
+      void Promise.resolve(onTerminalRef.current?.(next.run)).catch((err: unknown) => {
+        if (generation !== generationRef.current) return;
+        dispatchError({ type: "poll_failed", message: err instanceof Error ? err.message : "Não foi possível atualizar as ofertas persistidas." });
       });
     }
-  }, [handleSnapshot, productId]);
+  }, [productId]);
 
-  const refreshActive = useCallback(async () => {
-    await poll();
+  const poll = useCallback(async (signal: AbortSignal) => {
+    if (!productId) return;
+    const epoch = startEpochRef.current;
+    const known = watchingIdRef.current;
+    if (known && (!observedRef.current || !isTerminalMatchRunStatus(observedRef.current.run.status))) {
+      const live = await catalogApi.getMatchRunLive(known, signal);
+      signal.throwIfAborted();
+      if (epoch !== startEpochRef.current) return;
+      applySnapshot(live);
+    } else {
+      const active = await catalogApi.getActiveMatchRun(productId, signal);
+      signal.throwIfAborted();
+      let id = active?.id ?? null;
+      if (active && !isValidActiveMatchRun(active, productId)) throw new Error("Estado inválido para busca ativa.");
+      if (!id && !recoveredHistoryRef.current) {
+        const history = await catalogApi.listMatchRuns(productId, { limit: 1, signal });
+        signal.throwIfAborted();
+        id = history.items[0]?.id ?? null;
+        recoveredHistoryRef.current = true;
+      }
+      if (id) {
+        const live = await catalogApi.getMatchRunLive(id, signal);
+        signal.throwIfAborted();
+        if (epoch !== startEpochRef.current) return;
+        applySnapshot(live);
+      }
+    }
+    dispatchError({ type: "poll_succeeded" });
+    const current = observedRef.current;
+    if (!current || isTerminalMatchRunStatus(current.run.status)) {
+      const polling = pollingRef.current;
+      pollingRef.current = null;
+      polling?.stop();
+    }
+  }, [applySnapshot, productId]);
+
+  const startPolling = useCallback(() => {
+    if (pollingRef.current) return pollingRef.current;
+    const polling = startVisiblePolling(poll, () => POLL_INTERVAL_MS, (err) => {
+      dispatchError({ type: "poll_failed", message: err instanceof Error ? err.message : "Não foi possível atualizar a busca." });
+    });
+    pollingRef.current = polling;
+    return polling;
   }, [poll]);
 
+  const refreshActive = useCallback(async () => { await startPolling().refresh(); }, [startPolling]);
+
   const start = useCallback(async () => {
-    if (!productId || startInFlightRef.current || isStarting) return;
-    if (activeRun && isActiveMatchRunStatus(activeRun.status)) return;
+    if (!productId || startInFlightRef.current || observedRef.current?.is_effectively_active) return;
+    const generation = generationRef.current;
+    startEpochRef.current += 1;
+    const epoch = startEpochRef.current;
+    const signal = controllerRef.current?.signal;
     startInFlightRef.current = true;
-    setIsStarting(true);
+    setStartingRequest({ productId, epoch });
     dispatchError({ type: "start_requested" });
     try {
-      const run = await catalogApi.startMatchRun(productId);
-      if (!isValidActiveMatchRun(run, productId)) {
-        throw new Error("A API respondeu sem confirmar uma busca ativa válida.");
+      const run = await catalogApi.startMatchRun(productId, signal);
+      signal?.throwIfAborted();
+      if (generation !== generationRef.current) return;
+      if (!isValidActiveMatchRun(run, productId)) throw new Error("A API não confirmou uma busca ativa válida.");
+      watchingIdRef.current = run.id;
+      const initial: MatchRunLiveView = { run, is_effectively_active: true, auto_matches_found: 0, stores: [] };
+      if (observedRef.current?.run.id !== run.id) {
+        observedRef.current = initial;
+        setSnapshot(initial);
       }
-      watchingRunIdRef.current = run.id;
-      previousStatusRef.current = run.status;
-      setActiveRun(run);
       dispatchError({ type: "start_succeeded" });
-      if (run.already_active) {
-        toast("Já existe uma busca em andamento para este produto.");
-      } else {
-        toast.success("Busca em outras lojas iniciada.");
-      }
-    } catch (startError) {
-      dispatchError({
-        type: "start_failed",
-        message: startError instanceof Error ? startError.message : "Não foi possível iniciar a busca em outras lojas.",
-      });
+      await startPolling().refresh();
+      if (generation !== generationRef.current) return;
+      toast.success(run.already_active ? "Já existe uma busca em andamento." : "Busca em outras lojas iniciada.");
+    } catch (err) {
+      if (signal?.aborted || generation !== generationRef.current) return;
+      dispatchError({ type: "start_failed", message: err instanceof Error ? err.message : "Não foi possível iniciar a busca." });
     } finally {
-      startInFlightRef.current = false;
-      setIsStarting(false);
+      setStartingRequest((current) => current?.epoch === epoch ? null : current);
+      if (generation === generationRef.current) {
+        startInFlightRef.current = false;
+      }
     }
-  }, [activeRun, isStarting, productId]);
+  }, [productId, startPolling]);
 
   useEffect(() => {
-    if (!productId) return;
-    let cancelled = false;
+    generationRef.current += 1;
+    observedRef.current = null;
+    watchingIdRef.current = null;
+    recoveredHistoryRef.current = false;
+    startInFlightRef.current = false;
+    terminalSeenRef.current.clear();
     const controller = new AbortController();
-
-    const initialTimer = window.setTimeout(() => {
-      if (!cancelled && !controller.signal.aborted) void poll();
-    }, 0);
-    const timer = window.setInterval(() => {
-      if (!cancelled && !controller.signal.aborted) void poll();
-    }, POLL_INTERVAL_MS);
-
+    controllerRef.current = controller;
+    if (!productId) return () => controller.abort();
+    startPolling();
     return () => {
-      cancelled = true;
+      generationRef.current += 1;
       controller.abort();
-      window.clearTimeout(initialTimer);
-      window.clearInterval(timer);
+      const polling = pollingRef.current;
+      pollingRef.current = null;
+      polling?.stop();
     };
-  }, [poll, productId]);
+  }, [productId, startPolling]);
 
-  // Timer local de elapsed (1s) — não faz request de status.
-  const isActive = Boolean(activeRun && isActiveMatchRunStatus(activeRun.status));
+  const visible = snapshot?.run.product_id === productId ? snapshot : null;
+  const isActive = Boolean(visible?.is_effectively_active);
   useEffect(() => {
     if (!isActive) return;
     const timer = window.setInterval(() => setNowMs(Date.now()), ELAPSED_TICK_MS);
     return () => window.clearInterval(timer);
   }, [isActive]);
-
-  const timerAnchor =
-    activeRun?.active_since || activeRun?.claimed_at || activeRun?.started_at;
-  const elapsedLabel =
-    isActive && timerAnchor
-      ? formatElapsedHhMmSs(elapsedSecondsSince(timerAnchor, nowMs))
-      : "00:00:00";
-
+  const liveResults = useMemo(() => visible?.stores.filter((store) => store.status === "match" && store.matched_decision === "auto_match") ?? [], [visible]);
+  const anchor = visible?.run.active_since || visible?.run.claimed_at || visible?.run.started_at;
   return {
-    activeRun,
-    isActive,
-    isStarting,
-    elapsedLabel,
-    error: getMatchRunError(errorState),
-    start,
-    refreshActive,
+    activeRun: isActive ? visible!.run : null,
+    observedRun: visible?.run ?? null,
+    storeProgress: visible?.stores ?? [],
+    liveResults,
+    isRecovering: Boolean(visible && visible.run.status === "running" && !isActive),
+    isActive, isStarting: startingRequest?.productId === productId,
+    elapsedLabel: isActive && anchor ? formatElapsedHhMmSs(elapsedSecondsSince(anchor, nowMs)) : "00:00:00",
+    error: getMatchRunError(errorState), start, refreshActive,
   };
 }

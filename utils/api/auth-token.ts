@@ -5,6 +5,11 @@
  */
 
 let _accessToken: string | null = null;
+let sessionRevision = 0;
+
+export function getSessionRevision(): number {
+  return sessionRevision;
+}
 
 /** Retorna o access token atual (memória da aba, nunca armazenamento persistido). */
 export function getAccessToken(): string | null {
@@ -13,10 +18,12 @@ export function getAccessToken(): string | null {
 
 /** Armazena o access token em memória após login ou refresh bem-sucedido. */
 export function setAccessToken(token: string): void {
+  if (_accessToken !== token) sessionRevision += 1;
   _accessToken = token;
 }
 
 /** Remove o access token da memória (logout ou refresh inválido). */
 export function clearAccessToken(): void {
+  sessionRevision += 1;
   _accessToken = null;
 }
