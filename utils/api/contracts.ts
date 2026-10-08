@@ -541,13 +541,38 @@ export type CatalogProduct = {
   store?: { name: string; hostname: string } | null;
 };
 
+export type ActivityType = "product_added" | "new_offer" | "price_changed" | "availability_changed" | "offer_removed" | "out_of_stock" | "promotion_activated" | "promotion_expired" | "promotion_updated";
+
+export type ActivityItem = {
+  id: string;
+  type: ActivityType;
+  occurred_at: string;
+  product: { id: string; title: string; brand: string | null; primary_image_url: string | null };
+  store: { key: string; display_name: string } | null;
+  offer: {
+    listing_id: string;
+    old_currency: string | null;
+    currency: string | null;
+    old_price: string | null;
+    new_price: string | null;
+    old_price_kind: "pix" | "regular" | "promotion" | null;
+    new_price_kind: "pix" | "regular" | "promotion" | null;
+    price_direction: "decreased" | "increased" | "unchanged" | null;
+    old_availability: string | null;
+    availability: string | null;
+    available: boolean | null;
+    promotion_expires_at: string | null;
+  } | null;
+};
+
+export type ActivityListResponse = { items: ActivityItem[]; next_cursor: string | null };
+
 export type CatalogOverview = {
   summary: { products: number; variants: number; offers: number; stores: number };
   recent_products: Array<{ id: string; name: string; brand: string | null; created_at: string; image_url: string | null; variants: number; offers: number }>;
   single_offer_variants: Array<{ product_id: string; variant_id: string; product_name: string; variant_label: string | null; store_name: string | null }>;
   best_price_opportunities: Array<{ product_id: string; variant_id: string; product_name: string; variant_label: string | null; lowest_price: number; highest_price: number; savings: number; currency: string; offers: Array<{ store_name: string | null; price: number; url: string | null }> }>;
   alerts: Array<{ kind: string; label: string; count: number; product_ids: string[] }>;
-  recent_activity: Array<{ kind: string; label: string; product_id: string | null; product_name: string | null; occurred_at: string }>;
 };
 
 export type CatalogStore = {

@@ -1,3 +1,4 @@
+import type { ActivityListResponse } from "./contracts";
 import { api, ApiError, apiUrl, hasApiConfiguration } from "@/utils/api/client";
 import {
   apiImageToCatalogImage,
@@ -475,6 +476,15 @@ export const authApi = {
 // =============================================================================
 
 export const catalogApi = {
+  /** GET /products/activity — histórico persistente, paginado e autenticado. */
+  async listActivity(options: { cursor?: string | null; limit?: number; signal?: AbortSignal } = {}): Promise<ActivityListResponse> {
+    return api.get<ActivityListResponse>("/products/activity", {
+      query: { cursor: options.cursor, limit: options.limit ?? 15 },
+      cache: "no-store",
+      signal: options.signal,
+    });
+  },
+
   // -------------------------------------------------------------------------
   // Visão geral — derivada de products + stores
   // -------------------------------------------------------------------------
@@ -506,7 +516,6 @@ export const catalogApi = {
       single_offer_variants: [],
       best_price_opportunities: [],
       alerts: [],
-      recent_activity: [],
     };
   },
 

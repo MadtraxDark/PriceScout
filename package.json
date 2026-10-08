@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:activity": "npx --yes tsx --test utils/display/activity.test.tsx",
     "test:money": "npx --yes tsx --test utils/money.test.ts",
     "test:images": "npx --yes tsx --test utils/api/product-images.test.ts",
     "test:match-run": "npx --yes tsx --test utils/match-run.test.ts",
