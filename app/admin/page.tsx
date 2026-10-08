@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { RefObject } from "react";
 import { gsap } from "gsap";
 import Link from "next/link";
@@ -21,6 +22,7 @@ import {
 import { getStoreDisplayName } from "@/utils/store-display";
 import { CatalogActivity } from "@/components/CatalogActivity";
 import { NotificationPanel } from "@/components/NotificationPanel";
+import { PriceScoutLogo } from "@/components/AdminSidebar";
 
 type View = "overview" | "products" | "stores" | "product";
 type ScrapeStatus = "idle" | "loading" | "ready" | "error";
@@ -125,8 +127,6 @@ function Icon({ name }: { name: "grid" | "box" | "store" | "bell" | "plus" | "ar
   return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 
-function Logo() { return <div className="logo"><span className="logo-mark"><span /></span><span>price<span className="logo-accent">scout</span></span></div>; }
-
 function MediaImage({ src, alt, className = "", showFallbackLabel = true, availabilityStatus, retryable = false }: { src: string; alt: string; className?: string; showFallbackLabel?: boolean; availabilityStatus?: import("@/utils/api/contracts").ImageAvailabilityStatus; retryable?: boolean }) {
   return <ImageWithState src={src} alt={alt} className={className} showFallbackLabel={showFallbackLabel} availabilityStatus={availabilityStatus} retryable={retryable} allowRetry={false} />;
 }
@@ -150,15 +150,12 @@ function StoreLogo({ store }: { store: CatalogStore }) {
   return <span className="store-logo-unavailable" role="img" aria-label={failureMessage} title={failureMessage}><Icon name="store" /></span>;
 }
 
-const navItems: { id: View; label: string; icon: "grid" | "box" | "store" }[] = [
-  { id: "overview", label: "Visão geral", icon: "grid" },
-  { id: "products", label: "Produtos cadastrados", icon: "box" },
-  { id: "stores", label: "Lojas cadastradas", icon: "store" },
-  { id: "product", label: "Adicionar produto", icon: "box" },
-];
-
 export default function Home() {
-  const [view, setView] = useState<View>("overview");
+  const searchParams = useSearchParams();
+  const requestedView = searchParams.get("view");
+  const view: View = requestedView === "products" || requestedView === "stores" || requestedView === "product"
+    ? requestedView
+    : "overview";
   const [notice, setNotice] = useState("");
   const [productUrl, setProductUrl] = useState("");
   const [scrapeStatus, setScrapeStatus] = useState<ScrapeStatus>("idle");
@@ -300,7 +297,9 @@ export default function Home() {
           expiresAt: restoredPreviewId ? saved.expiresAt : undefined,
           url: saved.url ?? result.product.url,
         }));
-        setView("product");
+        const params = new URLSearchParams(window.location.search);
+        params.set("view", "product");
+        window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
         setProductUrl(saved.url ?? result.product.url);
         setReviewedUrl(saved.url ?? result.product.url);
         setScrapedProduct(result.product);
@@ -315,11 +314,6 @@ export default function Home() {
       setCatalogStores(storesResult.stores ?? []);
       setCatalogError("");
     }).catch(() => setCatalogError("Não foi possível carregar os registros do catálogo.")).finally(() => setCatalogLoading(false));
-    const params = new URLSearchParams(window.location.search);
-    const requestedView = params.get("view");
-    if (requestedView === "overview" || requestedView === "products" || requestedView === "stores" || requestedView === "product") {
-      window.setTimeout(() => setView(requestedView), 0);
-    }
   }, []);
 
   async function reloadCatalog(): Promise<boolean> {
@@ -479,7 +473,6 @@ export default function Home() {
   }
 
   function openView(nextView: View) {
-    setView(nextView);
     setNotice("");
     setScrapeError("");
     const params = new URLSearchParams(window.location.search);
@@ -487,10 +480,8 @@ export default function Home() {
     window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
   }
 
-  return <main className="admin-shell">
-    <aside className="sidebar"><div className="sidebar-top"><Logo /><span className="admin-badge">admin</span></div><nav className="main-nav" aria-label="Navegação principal"><p className="nav-label">Workspace</p>{navItems.map((item) => <button key={item.id} className={`nav-item ${view === item.id ? "active" : ""}`} onClick={() => openView(item.id)}><Icon name={item.icon} /><span>{item.label}</span>{item.id === "overview" && <span className="nav-arrow"><Icon name="arrow" /></span>}</button>)}<Link href="/admin/catalogo/alteracoes" className="nav-item"><Icon name="refresh" /><span>Alterações</span></Link></nav><div className="sidebar-note"><span className="live-dot" /><div><strong>API conectada</strong><span>Operações centralizadas</span></div></div><div className="sidebar-bottom"><div className="user-profile"><span className="avatar">--</span><span><strong>Conta administrativa</strong><small>Identidade não carregada</small></span></div></div></aside>
-    <section className="content-shell"><header className="topbar"><div className="mobile-logo"><Logo /></div><div className="topbar-actions"><NotificationPanel /><div className="topbar-divider" /><span className="environment">API externa</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <div className="overview-layout"><Overview openView={openView} /><CatalogActivity /></div> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : view === "stores" ? <CatalogView kind="stores" products={catalogProducts} stores={catalogStores} loading={catalogLoading} onEditStore={setEditingStore} /> : <FormView notice={notice} onSubmit={submitProduct} productUrl={productUrl} onProductUrlChange={changeProductUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} existingProductId={existingProductId} duplicateProduct={duplicateProduct} approvedPreview={approvedPreview} onApprove={approvePreview} progressMessage={progressMessagesForPreview(includeImages)[progressIndex] ?? "Preparando preview..."} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} matchedStore={matchedStore} includeImages={includeImages} onIncludeImagesChange={(value) => { setIncludeImagesOverride(value); }} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}{editingStore && <div className="store-editor-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingStore(null); }}><section className="store-editor" role="dialog" aria-modal="true" aria-labelledby="store-editor-title"><div className="store-editor-heading"><div className="store-editor-header-text"><div className="store-editor-kicker"><Icon name="store" /><span>Loja cadastrada</span></div><h2 id="store-editor-title">Editar loja</h2></div><button className="store-editor-close lightbox-close" type="button" onClick={() => setEditingStore(null)} aria-label="Fechar edição"><Icon name="close" /></button></div><StoreConfigurationForm store={editingStore} onCancel={() => setEditingStore(null)} onSave={saveStore} /></section></div>}</section>
-  </main>;
+  return <>
+    <header className="topbar"><div className="mobile-logo"><Link href="/admin" aria-label="PriceScout home"><PriceScoutLogo /></Link></div><div className="topbar-actions"><NotificationPanel /><div className="topbar-divider" /><span className="environment">API externa</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <div className="overview-layout"><Overview openView={openView} /><CatalogActivity /></div> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : view === "stores" ? <CatalogView kind="stores" products={catalogProducts} stores={catalogStores} loading={catalogLoading} onEditStore={setEditingStore} /> : <FormView notice={notice} onSubmit={submitProduct} productUrl={productUrl} onProductUrlChange={changeProductUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} existingProductId={existingProductId} duplicateProduct={duplicateProduct} approvedPreview={approvedPreview} onApprove={approvePreview} progressMessage={progressMessagesForPreview(includeImages)[progressIndex] ?? "Preparando preview..."} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} matchedStore={matchedStore} includeImages={includeImages} onIncludeImagesChange={(value) => { setIncludeImagesOverride(value); }} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}{editingStore && <div className="store-editor-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingStore(null); }}><section className="store-editor" role="dialog" aria-modal="true" aria-labelledby="store-editor-title"><div className="store-editor-heading"><div className="store-editor-header-text"><div className="store-editor-kicker"><Icon name="store" /><span>Loja cadastrada</span></div><h2 id="store-editor-title">Editar loja</h2></div><button className="store-editor-close lightbox-close" type="button" onClick={() => setEditingStore(null)} aria-label="Fechar edição"><Icon name="close" /></button></div><StoreConfigurationForm store={editingStore} onCancel={() => setEditingStore(null)} onSave={saveStore} /></section></div>}</>;
 }
 
 function Overview({ openView }: { openView: (view: View) => void }) {

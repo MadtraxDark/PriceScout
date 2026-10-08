@@ -50,8 +50,5 @@ function Explorer({ filters }: { filters: ChangeFilters }) {
 
 export function CatalogChanges() {
   const params = useSearchParams();
-  return <main className={`admin-shell ${styles.shell}`}>
-    <aside className={`sidebar ${styles.sidebar}`}><div className="sidebar-top"><Link href="/admin" className="logo">price<span className="logo-accent">scout</span></Link></div><nav className="main-nav" aria-label="Navegação principal"><p className="nav-label">Catálogo e ofertas</p><Link className="nav-item" href="/admin">Visão geral</Link><Link className="nav-item" href="/admin?view=products">Produtos cadastrados</Link><Link className="nav-item" href="/admin?view=stores">Lojas cadastradas</Link><Link className="nav-item active" href="/admin/catalogo/alteracoes" aria-current="page">Alterações</Link></nav></aside>
-    <section className="content-shell"><header className="topbar"><nav aria-label="Caminho da página" className={styles.breadcrumb}><Link href="/admin">Catálogo e ofertas</Link><span aria-hidden="true">/</span><span>Alterações</span></nav><NotificationPanel /></header><div className={`content ${styles.content}`}><Explorer filters={filtersFromParams(params)} /></div></section>
-  </main>;
+  return <><header className="topbar"><nav aria-label="Caminho da página" className={styles.breadcrumb}><Link href="/admin">Catálogo e ofertas</Link><span aria-hidden="true">/</span><span>Alterações</span></nav><NotificationPanel /></header><div className={`content ${styles.content}`}><Explorer filters={filtersFromParams(params)} /></div></>;
 }

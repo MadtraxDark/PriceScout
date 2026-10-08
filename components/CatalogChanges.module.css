@@ -1,5 +1,4 @@
 .content { max-width: 1240px; }
-.sidebar a { text-decoration: none; }
 .visuallyHidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .heading { margin-bottom: 24px; }
 .heading h1 { font-size: 32px; letter-spacing: -.04em; margin: 8px 0; }
@@ -59,8 +58,6 @@
   .row time { margin-left: 62px; flex-basis: calc(100% - 62px); min-width: 0; }
 }
 @media (max-width: 768px) {
-  .shell { grid-template-columns: minmax(0, 1fr); }
-  .sidebar { display: none; }
   .content { padding: 24px 16px; }
   .filters, .results { padding: 16px; }
   .updateStatus > p:first-child { min-height: 3.4em; }

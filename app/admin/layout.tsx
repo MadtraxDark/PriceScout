@@ -1,12 +1,13 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { NotificationPanel } from "@/components/NotificationPanel";
 import { ApiError } from "@/utils/api/client";
 import { authApi } from "@/utils/api/services";
 import { startVisiblePolling } from "@/utils/visible-polling";
+import { AdminSidebar } from "@/components/AdminSidebar";
 
 type AccessState = "checking" | "allowed" | "error";
 
@@ -104,10 +105,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           {retryButton}
         </section>
       )}
-      {showFloatingBell && (
-        <div className="admin-notification-slot"><NotificationPanel /></div>
-      )}
-      {children}
+      {showFloatingBell && <div className="admin-notification-slot"><NotificationPanel /></div>}
+      <main className="admin-shell">
+        <Suspense fallback={<aside className="sidebar" aria-hidden="true" />}><AdminSidebar /></Suspense>
+        <section className="content-shell"><Suspense fallback={<div className="content" aria-busy="true" />}>{children}</Suspense></section>
+      </main>
     </>
   );
 }
