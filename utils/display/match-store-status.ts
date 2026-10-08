@@ -7,6 +7,12 @@ export const MATCH_STORE_STATUS_LABELS: Record<MatchStoreRunStatus, string> = {
   match: "Correspondência encontrada",
   no_match: "Sem correspondência",
   error: "Erro durante a busca",
+  refresh_updated: "Oferta atualizada",
+  refresh_unchanged: "Sem alterações",
+  refresh_out_of_stock: "Sem estoque",
+  refresh_removed: "Oferta removida",
+  refresh_failed: "Falha ao verificar",
+  refresh_deferred: "Verificação adiada",
 };
 
 const UNKNOWN = "Status desconhecido";

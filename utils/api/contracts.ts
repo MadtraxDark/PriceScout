@@ -541,16 +541,18 @@ export type CatalogProduct = {
   store?: { name: string; hostname: string } | null;
 };
 
-export type ActivityType = "product_added" | "new_offer" | "price_changed" | "availability_changed" | "offer_removed" | "out_of_stock" | "promotion_activated" | "promotion_expired" | "promotion_updated";
+export type ActivityType = "product_added" | "new_offer" | "price_changed" | "availability_changed" | "offer_removed" | "out_of_stock" | "promotion_activated" | "promotion_expired" | "promotion_updated" | "seller_changed" | "gtin_learned" | "scrape_failed" | "unchanged" | "other";
 
 export type ActivityItem = {
   id: string;
   type: ActivityType;
   occurred_at: string;
-  product: { id: string; title: string; brand: string | null; primary_image_url: string | null };
+  product: { id: string; title: string; brand: string | null; model?: string | null; primary_image_url: string | null };
   store: { key: string; display_name: string } | null;
   offer: {
     listing_id: string;
+    old_seller?: string | null;
+    seller?: string | null;
     old_currency: string | null;
     currency: string | null;
     old_price: string | null;
@@ -641,7 +643,13 @@ export type MatchStoreRunStatus =
   | "running"
   | "match"
   | "no_match"
-  | "error";
+  | "error"
+  | "refresh_updated"
+  | "refresh_unchanged"
+  | "refresh_out_of_stock"
+  | "refresh_removed"
+  | "refresh_failed"
+  | "refresh_deferred";
 
 export type MatchRunStatusView = {
   id: string;

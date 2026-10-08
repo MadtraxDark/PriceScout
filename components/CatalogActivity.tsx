@@ -18,7 +18,7 @@ export function CatalogActivityView({ items, loading, error, nextCursor, loadMor
   const visible = items.filter((item) => activityTitle(item) !== null);
   return (
     <section className="overview-panel overview-activity" aria-labelledby="catalog-activity-heading" aria-busy={loading}>
-      <div className="section-heading"><div><p className="eyebrow">Catálogo e ofertas</p><h2 id="catalog-activity-heading">Atividade recente</h2></div></div>
+      <div className="section-heading"><div><p className="eyebrow">Catálogo e ofertas</p><h2 id="catalog-activity-heading">Atividade recente</h2></div><Link href="/admin/catalogo/alteracoes" className="text-button">Pesquisar alterações</Link></div>
       {error && <p className="overview-muted activity-error" role="status">{error} <button type="button" className="text-button" onClick={loadMore} disabled={loading}>Tentar novamente</button></p>}
       {loading && visible.length === 0 && <p className="overview-muted" role="status">Carregando atividades...</p>}
       {!loading && !error && visible.length === 0 && <p className="overview-muted">Nenhuma atividade registrada no catálogo.</p>}

@@ -68,6 +68,12 @@ describe("matchStoreStatusLabel", () => {
     assert.equal(matchStoreStatusLabel("match"), "Correspondência encontrada");
     assert.equal(matchStoreStatusLabel("no_match"), "Sem correspondência");
     assert.equal(matchStoreStatusLabel("error"), "Erro durante a busca");
+    assert.equal(matchStoreStatusLabel("refresh_updated"), "Oferta atualizada");
+    assert.equal(matchStoreStatusLabel("refresh_unchanged"), "Sem alterações");
+    assert.equal(matchStoreStatusLabel("refresh_out_of_stock"), "Sem estoque");
+    assert.equal(matchStoreStatusLabel("refresh_removed"), "Oferta removida");
+    assert.equal(matchStoreStatusLabel("refresh_failed"), "Falha ao verificar");
+    assert.equal(matchStoreStatusLabel("refresh_deferred"), "Verificação adiada");
   });
 });
 

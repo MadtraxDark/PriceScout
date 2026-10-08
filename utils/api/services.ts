@@ -476,6 +476,13 @@ export const authApi = {
 // =============================================================================
 
 export const catalogApi = {
+  async listChanges(options: { query?: Record<string, string | undefined>; cursor?: string | null; signal?: AbortSignal } = {}): Promise<ActivityListResponse> {
+    return api.get<ActivityListResponse>("/products/changes", {
+      query: { ...options.query, cursor: options.cursor, limit: 25 },
+      cache: "no-store",
+      signal: options.signal,
+    });
+  },
   /** GET /products/activity — histórico persistente, paginado e autenticado. */
   async listActivity(options: { cursor?: string | null; limit?: number; signal?: AbortSignal } = {}): Promise<ActivityListResponse> {
     return api.get<ActivityListResponse>("/products/activity", {

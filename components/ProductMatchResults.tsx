@@ -9,7 +9,7 @@ import { formatMoney } from "@/utils/money";
 import { getStoreDisplayName } from "@/utils/store-display";
 import { matchStoreStatusLabel } from "@/utils/display";
 
-type StoreStatusClass = "pending" | "running" | "match" | "no_match" | "error" | "review";
+type StoreStatusClass = "pending" | "running" | "match" | "no_match" | "error" | "review" | "refresh_updated" | "refresh_unchanged" | "refresh_out_of_stock" | "refresh_removed" | "refresh_failed" | "refresh_deferred";
 const indicatorClasses: Record<StoreStatusClass, string> = {
   pending: styles.storeIndicator_pending,
   running: styles.storeIndicator_running,
@@ -17,6 +17,12 @@ const indicatorClasses: Record<StoreStatusClass, string> = {
   no_match: styles.storeIndicator_no_match,
   error: styles.storeIndicator_error,
   review: styles.storeIndicator_review,
+  refresh_updated: styles.storeIndicator_match,
+  refresh_unchanged: styles.storeIndicator_match,
+  refresh_out_of_stock: styles.storeIndicator_no_match,
+  refresh_removed: styles.storeIndicator_no_match,
+  refresh_failed: styles.storeIndicator_error,
+  refresh_deferred: styles.storeIndicator_running,
 };
 const statusClasses: Record<StoreStatusClass, string> = {
   pending: styles.storeStatus_pending,
@@ -25,6 +31,12 @@ const statusClasses: Record<StoreStatusClass, string> = {
   no_match: styles.storeStatus_no_match,
   error: styles.storeStatus_error,
   review: styles.storeStatus_review,
+  refresh_updated: styles.storeStatus_match,
+  refresh_unchanged: styles.storeStatus_match,
+  refresh_out_of_stock: styles.storeStatus_no_match,
+  refresh_removed: styles.storeStatus_no_match,
+  refresh_failed: styles.storeStatus_error,
+  refresh_deferred: styles.storeStatus_running,
 };
 
 function publicUrl(value: string | null): string | null {
@@ -43,7 +55,7 @@ type StoreProgressProps = {
 
 export function ProductMatchStoreProgress({ stores, recovering, storesCompleted, storesTotal }: StoreProgressProps) {
   if (!stores.length) return null;
-  const completed = storesCompleted ?? stores.filter((store) => store.status === "match" || store.status === "no_match" || store.status === "error").length;
+  const completed = storesCompleted ?? stores.filter((store) => store.status !== "pending" && store.status !== "running").length;
   const total = storesTotal ?? stores.length;
 
   return <section className={styles.progress} aria-label="Progresso da busca por loja">
