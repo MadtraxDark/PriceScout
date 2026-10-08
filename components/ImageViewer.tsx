@@ -28,6 +28,7 @@ type ImageWithStateProps = {
   warningCode?: string | null;
   showFallbackLabel?: boolean;
   allowRetry?: boolean;
+  onImageError?: () => void;
   onImageFailure?: (failure: ImageAvailabilityView) => void;
 };
 
@@ -40,6 +41,7 @@ export function ImageWithState({
   warningCode,
   showFallbackLabel = true,
   allowRetry = true,
+  onImageError,
   onImageFailure,
 }: ImageWithStateProps) {
   const resolvedSrc = useMemo(() => resolveMediaUrl(src) || "", [src]);
@@ -60,6 +62,7 @@ export function ImageWithState({
 
   const handleError = useCallback(() => {
     setRenderState({ src: resolvedSrc, attempt, status: "error", failure: imageAvailabilityView("load_failed") });
+    onImageError?.();
     if (isDiagnosing.current) return;
     isDiagnosing.current = true;
     const currentDiagnosis = ++diagnosisId.current;
@@ -71,7 +74,7 @@ export function ImageWithState({
     }).finally(() => {
       if (diagnosisId.current === currentDiagnosis) isDiagnosing.current = false;
     });
-  }, [attempt, onImageFailure, resolvedSrc]);
+  }, [attempt, onImageError, onImageFailure, resolvedSrc]);
 
   useLayoutEffect(() => {
     activeSrc.current = resolvedSrc;

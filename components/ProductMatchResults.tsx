@@ -8,6 +8,9 @@ import { finitePositive } from "@/utils/match-run-offers";
 import { formatMoney } from "@/utils/money";
 import { getStoreDisplayName } from "@/utils/store-display";
 import { matchStoreStatusLabel } from "@/utils/display";
+import { findCatalogStore } from "@/utils/store-resolution";
+import { StoreIdentity } from "@/components/StoreIdentity";
+import type { CatalogStore } from "@/utils/api/contracts";
 
 type StoreStatusClass = "pending" | "running" | "match" | "no_match" | "error" | "review" | "refresh_updated" | "refresh_unchanged" | "refresh_out_of_stock" | "refresh_removed" | "refresh_failed" | "refresh_deferred";
 const indicatorClasses: Record<StoreStatusClass, string> = {
@@ -78,17 +81,24 @@ export function ProductMatchStoreProgress({ stores, recovering, storesCompleted,
   </section>;
 }
 
-export const ProgressiveOfferRow = memo(function ProgressiveOfferRow({ result, run, imageUrl, productName }: {
+export const ProgressiveOfferRow = memo(function ProgressiveOfferRow({ result, run, imageUrl, productName, stores }: {
   result: MatchStoreLiveView;
   run: MatchRunStatusView | null;
   imageUrl: string | null;
   productName: string;
+  stores: CatalogStore[];
 }) {
   const price = finitePositive(result.matched_price);
   const converted = finitePositive(result.converted_price_brl);
   const url = publicUrl(result.matched_canonical_url ?? result.matched_url);
   const interrupted = run?.status === "failed" || run?.status === "cancelled";
-  const storeName = getStoreDisplayName(result.store, result.matched_url, result.store_display_name);
+  const storeName = getStoreDisplayName(result.store, result.matched_url, result.store_display_name, result.matched_country);
+  const matchingStore = findCatalogStore(stores, {
+    storeKey: result.store,
+    url: result.matched_canonical_url ?? result.matched_url,
+    displayName: result.store_display_name ?? storeName,
+    country: result.matched_country,
+  });
   return <article className="persisted-offer-row">
     <div className="persisted-offer-image">
       <ImageWithState src={imageUrl ?? ""} alt={productName} />
@@ -104,10 +114,7 @@ export const ProgressiveOfferRow = memo(function ProgressiveOfferRow({ result, r
       </div>
     </div>
     <div className="persisted-offer-store">
-      <div className="persisted-store-identity">
-        <span className="persisted-store-mark" aria-hidden="true">{storeName.slice(0, 2).toLocaleUpperCase("pt-BR")}</span>
-        <strong>{storeName}</strong>
-      </div>
+      <StoreIdentity store={matchingStore} label={storeName} />
       {url && <a className="store-offer-link" href={url} target="_blank" rel="noopener noreferrer">
         Ir à loja
         <svg className="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>

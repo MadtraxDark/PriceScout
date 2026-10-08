@@ -4,6 +4,9 @@ import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import type { CatalogStore } from "@/utils/api/contracts";
 import { resolveMediaUrl } from "@/utils/api/product-images";
 import { ImageWithState } from "@/components/ImageViewer";
+import { storeLogoDataUrl } from "@/utils/store-logo";
+
+export { storeLogoDataUrl } from "@/utils/store-logo";
 
 export type StoreConfigurationValues = {
   name: string;
@@ -20,10 +23,6 @@ export type StoreConfigurationFormProps = {
   onCancel: () => void;
   submitLabel?: string;
 };
-
-export function storeLogoDataUrl(svg: string): string {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
 
 function persistedLogoPreview(store: Partial<CatalogStore>): string {
   const resolved = store.logo_url ? resolveMediaUrl(store.logo_url) : null;

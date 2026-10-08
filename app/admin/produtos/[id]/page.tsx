@@ -6,11 +6,12 @@ import { useRouter } from "next/navigation";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ImageViewer, { ImageWithState } from "@/components/ImageViewer";
 import OfferPrice from "@/components/OfferPrice";
-import { storeLogoDataUrl } from "@/components/StoreConfigurationForm";
+import { StoreIdentity } from "@/components/StoreIdentity";
 import { catalogApi } from "@/utils/api/services";
 import { startVisiblePolling } from "@/utils/visible-polling";
 import { toGalleryProductImage } from "@/utils/api/product-images";
 import { getStoreDisplayName } from "@/utils/store-display";
+import { findCatalogStore, storesHaveProcessingLogo } from "@/utils/store-resolution";
 import { MatchRunHistory } from "@/components/MatchRunHistory";
 import { ProgressiveOfferRow, ProductMatchStoreProgress, ReviewOffers } from "@/components/ProductMatchResults";
 import { mergeMatchOffers } from "@/utils/match-run-offers";
@@ -78,11 +79,6 @@ function storeLabel(offer: CatalogOffer): string {
     offer.country,
   );
 }
-
-function storeInitials(label: string): string {
-  return label.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "LO";
-}
-
 
 function formatRelativePast(iso: string | null | undefined, nowMs: number): string | null {
   if (!iso) return null;
@@ -183,9 +179,7 @@ const PersistedOffersList = memo(function PersistedOffersList({
   observedRun: MatchRunStatusView | null;
 }) {
   const [stores, setStores] = useState<CatalogStore[]>([]);
-  const hasProcessingStoreLogo = stores.some(
-    (store) => store.logo_processing_status === "pending" || store.logo_processing_status === "processing",
-  );
+  const hasProcessingStoreLogo = storesHaveProcessingLogo(stores);
 
   useEffect(() => {
     let active = true;
@@ -226,7 +220,7 @@ const PersistedOffersList = memo(function PersistedOffersList({
             ) : (
               <div className="persisted-offer-list">
                 {offers.map((row, index) => {
-                  if (!row.offer && row.partial) return <ProgressiveOfferRow key={row.key} result={row.partial} run={observedRun} imageUrl={primaryImage?.image_url ?? null} productName={product.name} />;
+                  if (!row.offer && row.partial) return <ProgressiveOfferRow key={row.key} result={row.partial} run={observedRun} imageUrl={primaryImage?.image_url ?? null} productName={product.name} stores={stores} />;
                   const offer = row.offer!;
                   const price = offerPrice(offer);
                   const comparable = comparablePriceBrl(offer);
@@ -234,16 +228,11 @@ const PersistedOffersList = memo(function PersistedOffersList({
                   const label = storeLabel(offer);
                   const conditionLabel = formatOfferConditionLabel(offer);
                   const carrierLabel = formatOfferCarrierLabel(offer.carrier);
-                  const countryCode = label === "Amazon Brasil" ? "BR" : label === "Amazon EUA" ? "US" : null;
-                  const matchingStore = stores.find((store) => {
-                    const key = offer.source?.trim().toLowerCase().replace(/[\s-]+/g, "_");
-                    const offerHost = (() => {
-                      try { return new URL(offer.canonical_url || "").hostname.replace(/^www\./, "").toLowerCase(); }
-                      catch { return offer.store?.hostname?.replace(/^www\./, "").toLowerCase() ?? ""; }
-                    })();
-                    return (key && store.id.toLowerCase() === key)
-                      || (offerHost && (store.domains ?? [store.hostname]).some((domain) => domain.toLowerCase() === offerHost))
-                      || store.name.localeCompare(label, "pt-BR", { sensitivity: "base" }) === 0;
+                  const matchingStore = findCatalogStore(stores, {
+                    storeKey: offer.source,
+                    url: offer.canonical_url || offer.store?.hostname,
+                    displayName: offer.store?.name || label,
+                    country: offer.country,
                   });
                   const showPromoPrice = Boolean(offer.promotion_commercially_active);
                   const isBrl = (offer.currency || "BRL").toUpperCase() === "BRL";
@@ -285,13 +274,7 @@ const PersistedOffersList = memo(function PersistedOffersList({
                         <OfferMonitoringMeta offer={offer} onExpired={onRefreshOffers} />
                       </div>
                       <div className="persisted-offer-store">
-                        <div className="persisted-store-identity">
-                          {matchingStore?.logo_url || matchingStore?.logo_svg
-                            ? <ImageWithState className="persisted-store-logo" src={matchingStore.logo_url ?? storeLogoDataUrl(matchingStore.logo_svg!)} alt={`Logo de ${matchingStore.name}`} showFallbackLabel={false} />
-                            : <span className="persisted-store-mark" aria-hidden="true">{storeInitials(label)}</span>}
-                          <strong>{label}</strong>
-                          {countryCode && <span className="persisted-store-country" aria-label={countryCode === "BR" ? "Brasil" : "Estados Unidos"}>{countryCode}</span>}
-                        </div>
+                        <StoreIdentity store={matchingStore} label={label} />
                         {offer.canonical_url && <a className="store-offer-link" href={offer.canonical_url} target="_blank" rel="noopener noreferrer">Ir à loja <Icon name="arrow" /></a>}
                       </div>
                     </article>
@@ -312,6 +295,7 @@ const PersistedOffersList = memo(function PersistedOffersList({
               run={observedRun}
               imageUrl={primaryImage?.image_url ?? null}
               productName={product.name}
+              stores={stores}
             />
           ))}
         </div>
