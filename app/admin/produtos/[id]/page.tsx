@@ -165,6 +165,8 @@ const PersistedOffersList = memo(function PersistedOffersList({
   searchBusy,
   searchLabel,
   onRefreshOffers,
+  onApproveReviewOffer,
+  approvingOfferId,
   liveResults,
   observedRun,
 }: {
@@ -175,6 +177,8 @@ const PersistedOffersList = memo(function PersistedOffersList({
   searchBusy: boolean;
   searchLabel: string;
   onRefreshOffers?: () => void;
+  onApproveReviewOffer: (offer: CatalogOffer) => Promise<void>;
+  approvingOfferId: string | null;
   liveResults: MatchStoreLiveView[];
   observedRun: MatchRunStatusView | null;
 }) {
@@ -282,7 +286,7 @@ const PersistedOffersList = memo(function PersistedOffersList({
                 })}
               </div>
             )}
-            <ReviewOffers offers={reviewOffers} />
+            <ReviewOffers offers={reviewOffers} onApprove={onApproveReviewOffer} approvingOfferId={approvingOfferId} />
           </section>
         );
       })}
@@ -318,6 +322,7 @@ export default function ProductAdminPage({ params }: { params: Promise<{ id: str
   const [images, setImages] = useState<ProductImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [approvingOfferId, setApprovingOfferId] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [lightbox, setLightbox] = useState<ProductImage | null>(null);
@@ -469,6 +474,19 @@ export default function ProductAdminPage({ params }: { params: Promise<{ id: str
   const refreshOffers = useCallback(() => {
     void refreshPersistedOffers().catch((err: unknown) => setError(err instanceof Error ? err.message : "Não foi possível atualizar ofertas."));
   }, [refreshPersistedOffers]);
+  const approveReviewOffer = useCallback(async (offer: CatalogOffer) => {
+    setApprovingOfferId(offer.id);
+    setError("");
+    setNotice("");
+    try {
+      const updated = await catalogApi.approveReviewOffer(id, offer.id);
+      setProduct((current) => current ? { ...current, variants: updated.variants } : updated);
+      setDraft((current) => ({ ...current, variants: updated.variants }));
+      setNotice("Oferta aprovada e incluída no acompanhamento de preços.");
+    } finally {
+      setApprovingOfferId(null);
+    }
+  }, [id]);
   const money = useCallback((value: number | null, currency: string) =>
     value == null ? "Não informado" : formatMoney(value, currency), []);
   function requestExit() { if (hasUnsavedChanges) setExitPrompt(true); else router.push("/admin?view=products"); }
@@ -523,6 +541,8 @@ export default function ProductAdminPage({ params }: { params: Promise<{ id: str
           searchBusy={searchingOtherStorePrices}
           searchLabel={matchButtonLabel}
           onRefreshOffers={refreshOffers}
+          onApproveReviewOffer={approveReviewOffer}
+          approvingOfferId={approvingOfferId}
         />
         {id ? <MatchRunHistory productId={id} refreshKey={matchHistoryKey} /> : null}
       </section><div className="product-admin-grid">

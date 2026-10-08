@@ -1,7 +1,7 @@
 "use client";
 
 import styles from "./ProductMatchResults.module.css";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { ImageWithState } from "@/components/ImageViewer";
 import type { CatalogOffer, MatchRunStatusView, MatchStoreLiveView } from "@/utils/api/contracts";
 import { finitePositive } from "@/utils/match-run-offers";
@@ -123,8 +123,28 @@ export const ProgressiveOfferRow = memo(function ProgressiveOfferRow({ result, r
   </article>;
 });
 
-export function ReviewOffers({ offers }: { offers: CatalogOffer[] }) {
+export function ReviewOffers({ offers, onApprove, approvingOfferId }: {
+  offers: CatalogOffer[];
+  onApprove: (offer: CatalogOffer) => Promise<void>;
+  approvingOfferId: string | null;
+}) {
+  const [candidate, setCandidate] = useState<CatalogOffer | null>(null);
+  const [approvalError, setApprovalError] = useState("");
+  const [saving, setSaving] = useState(false);
   if (!offers.length) return null;
+  async function confirmApproval() {
+    if (!candidate || saving) return;
+    setSaving(true);
+    setApprovalError("");
+    try {
+      await onApprove(candidate);
+      setCandidate(null);
+    } catch (error) {
+      setApprovalError(error instanceof Error ? error.message : "Não foi possível aprovar a oferta.");
+    } finally {
+      setSaving(false);
+    }
+  }
   return <aside className={styles.progress} aria-label="Ofertas em revisão">
     <h3>Ofertas que exigem revisão</h3>
     <ul className={`${styles.storeList} ${styles.reviewList}`}>{offers.map((offer) => {
@@ -134,7 +154,22 @@ export function ReviewOffers({ offers }: { offers: CatalogOffer[] }) {
         <strong className={styles.storeName}>{getStoreDisplayName(offer.source, offer.canonical_url, offer.store?.name, offer.country)}</strong>
         <span className={styles.storeStatus}>Correspondência em revisão</span>
         {url && <a className={styles.reviewLink} href={url} target="_blank" rel="noopener noreferrer">Consultar oferta</a>}
+        <button className={styles.approveButton} type="button" onClick={() => { setApprovalError(""); setCandidate(offer); }} disabled={approvingOfferId === offer.id}>Aprovar oferta</button>
       </li>;
     })}</ul>
+    {candidate && <div className={styles.approvalBackdrop} role="presentation" onMouseDown={(event) => { if (!saving && event.target === event.currentTarget) setCandidate(null); }}>
+      <section className={styles.approvalDialog} role="alertdialog" aria-modal="true" aria-labelledby="approve-review-title" aria-describedby="approve-review-description">
+        <p className={styles.approvalEyebrow}>Revisão de correspondência</p>
+        <h4 id="approve-review-title">Aprovar esta oferta?</h4>
+        <p id="approve-review-description">Ao aprovar, esta oferta será ativada no produto e passará a participar do acompanhamento de preços. Confira o modelo, a variação e as condições diretamente na loja antes de continuar.</p>
+        <div className={styles.approvalActions}>
+          <button className={styles.cancelApproval} type="button" onClick={() => setCandidate(null)} disabled={saving}>Cancelar</button>
+          <button className={styles.approveButton} type="button" onClick={() => void confirmApproval()} disabled={saving}>
+            {saving ? "Aprovando..." : "Confirmar aprovação"}
+          </button>
+        </div>
+        {approvalError && <p className={styles.approvalError} role="alert">{approvalError}</p>}
+      </section>
+    </div>}
   </aside>;
 }

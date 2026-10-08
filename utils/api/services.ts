@@ -647,6 +647,13 @@ export const catalogApi = {
     return { product };
   },
 
+  async approveReviewOffer(productId: string, listingId: string): Promise<CatalogProduct> {
+    await api.post<ProductView>(
+      `/products/${encodeURIComponent(productId)}/listings/${encodeURIComponent(listingId)}/approve`,
+    );
+    return this.getProduct(productId);
+  },
+
   // -------------------------------------------------------------------------
   // Excluir produto — DELETE /products/{id} → 204
   // -------------------------------------------------------------------------

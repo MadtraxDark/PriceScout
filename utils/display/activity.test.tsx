@@ -97,10 +97,18 @@ describe("persistent catalog activity", () => {
     assert.match(error, /Tentar novamente/);
     assert.doesNotMatch(error, /Nenhuma atividade registrada/);
   });
-  it("renders pagination only when there is another page", async () => {
-    assert.match(await render({ items: [item()], nextCursor: "test-cursor" }), /Ver mais/);
+  it("links to the full changes page when more activity exists", async () => {
+    const withCursor = await render({ items: [item()], nextCursor: "test-cursor" });
+    assert.match(withCursor, /href="\/admin\/catalogo\/alteracoes"[^>]*>Ver mais<\/a>/);
+    assert.doesNotMatch(withCursor, /Ver menos|Carregar mais atividades/);
     assert.doesNotMatch(await render({ items: [item()] }), /Ver mais/);
-    assert.match(await render({ items: [item()], nextCursor: "test-cursor", loading: true }), /disabled=""/);
+    assert.match(await render({ items: [item()], nextCursor: "test-cursor", loading: true }), /href="\/admin\/catalogo\/alteracoes"/);
+  });
+  it("keeps the overview activity summary capped at five rows", async () => {
+    const items = Array.from({ length: 7 }, (_, index) => ({ ...item(), id: `offer:${index}` }));
+    const html = await render({ items });
+    assert.equal((html.match(/class="activity-row/g) ?? []).length, 5);
+    assert.match(html, /href="\/admin\/catalogo\/alteracoes"[^>]*>Ver mais<\/a>/);
   });
   it("never renders scrape_failed in the main feed", async () => {
     const html = await render({ items: [{ ...item(), type: "scrape_failed" as ActivityItem["type"] }] });
