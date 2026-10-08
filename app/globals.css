@@ -794,6 +794,16 @@ strong,b { font-weight:var(--weight-semibold); }
   font-size:11px;
   line-height:1.45;
 }
+.match-run-history-toggle {
+  min-height:36px;
+  margin-top:8px;
+  padding:6px 0;
+  color:var(--accent);
+  cursor:pointer;
+  text-align:left;
+}
+.match-run-history-toggle:hover { text-decoration:underline; text-underline-offset:3px; }
+.match-run-history-toggle:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:3px; }
 .match-run-detail-summary {
   display:grid;
   gap:6px;

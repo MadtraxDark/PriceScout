@@ -161,6 +161,7 @@ export function MatchRunHistory({
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
+  const [historyExpanded, setHistoryExpanded] = useState(false);
 
   const loadHistory = useCallback(async () => {
     if (!productId) return;
@@ -168,6 +169,7 @@ export function MatchRunHistory({
     try {
       const result = await catalogApi.listMatchRuns(productId, { limit: 15 });
       setItems(result.items);
+      setHistoryExpanded(false);
       setError("");
     } catch (loadError) {
       setError(
@@ -253,20 +255,32 @@ export function MatchRunHistory({
       ) : items.length === 0 ? (
         <p className="overview-muted">Nenhuma busca registrada para este produto.</p>
       ) : (
-        <ul className="match-run-summary-list">
-          {items.map((run) => (
-            <li key={run.id}>
-              <button type="button" onClick={() => void openDetail(run.id)}>
-                <strong>{runStatusHeading(run)}</strong>
-                <span>
-                  {formatWhen(run.started_at)} · {run.matches_found} oferta(s) ·{" "}
-                  {run.stores_completed}/{run.stores_total} lojas
-                </span>
-                <span>{formatDurationMs(run.total_duration_ms)}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="match-run-summary-list">
+            {(historyExpanded ? items : items.slice(0, 3)).map((run) => (
+              <li key={run.id}>
+                <button type="button" onClick={() => void openDetail(run.id)}>
+                  <strong>{runStatusHeading(run)}</strong>
+                  <span>
+                    {formatWhen(run.started_at)} · {run.matches_found} oferta(s) ·{" "}
+                    {run.stores_completed}/{run.stores_total} lojas
+                  </span>
+                  <span>{formatDurationMs(run.total_duration_ms)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {items.length > 3 && (
+            <button
+              className="text-button match-run-history-toggle"
+              type="button"
+              aria-expanded={historyExpanded}
+              onClick={() => setHistoryExpanded((expanded) => !expanded)}
+            >
+              {historyExpanded ? "Ver menos" : "Ver mais"}
+            </button>
+          )}
+        </>
       )}
     </section>
   );
