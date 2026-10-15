@@ -753,6 +753,43 @@ export type NotificationView = {
   metadata: Record<string, unknown>;
 };
 
+export type FavoriteView = {
+  id: string;
+  product_id: string;
+  title: string;
+  brand: string | null;
+  primary_image_url: string | null;
+  offers: FavoriteOfferView[];
+  offers_count: number;
+  last_updated_at: string | null;
+  notify_price_drop: boolean;
+  email_available: boolean;
+  created_at: string;
+};
+
+export type FavoriteOfferView = {
+  listing_id: string;
+  store: string;
+  listing_url: string;
+  price: string;
+  currency: string;
+  last_updated_at: string;
+};
+
+export type FavoriteMutationResponse = {
+  id: string;
+  product_id: string;
+  notify_price_drop: boolean;
+  email_available: boolean;
+};
+
+export type FavoriteListResponse = {
+  items: FavoriteView[];
+  count: number;
+  limit: number;
+  offset: number;
+};
+
 export type NotificationListResponse = {
   items: NotificationView[];
   unread_count: number;

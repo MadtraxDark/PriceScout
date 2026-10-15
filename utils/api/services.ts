@@ -25,6 +25,8 @@ import type {
   MatchRunStatusView,
   NotificationListResponse,
   NotificationView,
+  FavoriteListResponse,
+  FavoriteMutationResponse,
   OfferRefreshRequest,
   OfferRefreshResponse,
   OtherStorePricesResponse,
@@ -476,6 +478,22 @@ export const authApi = {
 // =============================================================================
 
 export const catalogApi = {
+  async listFavorites(options: { signal?: AbortSignal } = {}): Promise<FavoriteListResponse> {
+    return api.get<FavoriteListResponse>("/favorites", { cache: "no-store", signal: options.signal });
+  },
+
+  async putFavorite(productId: string): Promise<FavoriteMutationResponse> {
+    return api.put<FavoriteMutationResponse>(`/products/${encodeURIComponent(productId)}/favorite`);
+  },
+
+  async removeFavorite(productId: string): Promise<void> {
+    await api.delete<void>(`/products/${encodeURIComponent(productId)}/favorite`);
+  },
+
+  async setFavoritePriceAlert(productId: string, enabled: boolean): Promise<FavoriteMutationResponse> {
+    return api.patch<FavoriteMutationResponse>(`/products/${encodeURIComponent(productId)}/favorite`, { notify_price_drop: enabled });
+  },
+
   async listChanges(options: { query?: Record<string, string | undefined>; cursor?: string | null; signal?: AbortSignal } = {}): Promise<ActivityListResponse> {
     return api.get<ActivityListResponse>("/products/changes", {
       query: { ...options.query, cursor: options.cursor, limit: 25 },

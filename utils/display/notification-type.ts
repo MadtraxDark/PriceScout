@@ -2,9 +2,11 @@ import { isBlank, warnUnknownLabel } from "./labels";
 
 export type NotificationType =
   | "PRODUCT_MATCH_COMPLETED"
-  | "PRODUCT_MATCH_FAILED";
+  | "PRODUCT_MATCH_FAILED"
+  | "price_drop";
 
 export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
+  price_drop: "Queda de preço",
   PRODUCT_MATCH_COMPLETED: "Busca concluída",
   PRODUCT_MATCH_FAILED: "Busca não concluída",
 };
