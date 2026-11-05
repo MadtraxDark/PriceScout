@@ -860,4 +860,14 @@ export const notificationsApi = {
   async markAllRead(): Promise<UnreadCountResponse> {
     return api.post<UnreadCountResponse>("/notifications/read-all");
   },
+
+  async remove(notificationId: string): Promise<UnreadCountResponse> {
+    return api.delete<UnreadCountResponse>(
+      `/notifications/${encodeURIComponent(notificationId)}`,
+    );
+  },
+
+  async removeAll(): Promise<UnreadCountResponse> {
+    return api.delete<UnreadCountResponse>("/notifications");
+  },
 };

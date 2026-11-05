@@ -68,6 +68,8 @@ Componentes e páginas não devem chamar `fetch` diretamente nem conhecer banco,
 | GET | `/match-runs/{id}` | Status para polling |
 | GET | `/match-runs/{id}/details` | Relatório completo |
 | GET | `/notifications` | Central de notificações |
+| DELETE | `/notifications/{id}` | Remover uma notificação |
+| DELETE | `/notifications` | Limpar todas as notificações |
 | POST | `/offers/refresh` | Atualizar ofertas persistidas |
 | GET | `/stores` | Lojas disponíveis (somente leitura) |
 | GET | `/health` | Health check |

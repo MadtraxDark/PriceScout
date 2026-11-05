@@ -26,7 +26,7 @@ function formatWhen(iso: string): string {
  * Sino + painel da central persistente de notificações (topbar admin).
  */
 export function NotificationPanel() {
-  const { items, unreadCount, loading, error, refresh, markRead, markAllRead } = useNotifications();
+  const { items, unreadCount, loading, error, refresh, markRead, markAllRead, remove, removeAll } = useNotifications();
   const [open, setOpen] = useState(false);
   const [actionError, setActionError] = useState("");
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -74,6 +74,24 @@ export function NotificationPanel() {
     }
   }
 
+  async function removeOne(id: string) {
+    try {
+      await remove(id);
+      setActionError("");
+    } catch {
+      setActionError("Não foi possível remover a notificação.");
+    }
+  }
+
+  async function removeAllItems() {
+    try {
+      await removeAll();
+      setActionError("");
+    } catch {
+      setActionError("Não foi possível limpar as notificações.");
+    }
+  }
+
   return (
     <div className="notification-panel-root" ref={panelRef}>
       <button
@@ -98,11 +116,18 @@ export function NotificationPanel() {
               <p className="eyebrow">Notificações</p>
               <strong>{loading || error ? "Central de notificações" : unreadCount > 0 ? `${unreadCount} não lida(s)` : "Tudo lido"}</strong>
             </div>
-            {unreadCount > 0 && (
-              <button className="text-button" type="button" onClick={() => void markAll()}>
-                Marcar todas
-              </button>
-            )}
+            <div className="notification-panel-actions">
+              {unreadCount > 0 && (
+                <button className="text-button" type="button" onClick={() => void markAll()}>
+                  Marcar todas
+                </button>
+              )}
+              {items.length > 0 && (
+                <button className="text-button" type="button" onClick={() => void removeAllItems()}>
+                  Limpar todas
+                </button>
+              )}
+            </div>
           </header>
           {actionError && <p className="error-notice" role="alert">{actionError}</p>}
           {error && <p className="error-notice" role="status">{error}</p>}
@@ -126,24 +151,34 @@ export function NotificationPanel() {
                 return (
                   <li key={item.id} className={unread ? "is-unread" : undefined}>
                     {item.product_id ? (
-                      <Link
-                        href={`/admin/produtos/${item.product_id}`}
-                        onClick={() => {
-                          if (unread) void markOne(item.id);
-                          setOpen(false);
-                        }}
-                      >
-                        {body}
-                      </Link>
+                      <div className="notification-row">
+                        <Link
+                          href={`/admin/produtos/${item.product_id}`}
+                          onClick={() => {
+                            if (unread) void markOne(item.id);
+                            setOpen(false);
+                          }}
+                        >
+                          {body}
+                        </Link>
+                        <button className="notification-remove" type="button" aria-label={`Remover notificação: ${title}`} onClick={() => void removeOne(item.id)}>
+                          X
+                        </button>
+                      </div>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (unread) void markOne(item.id);
-                        }}
-                      >
-                        {body}
-                      </button>
+                      <div className="notification-row">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (unread) void markOne(item.id);
+                          }}
+                        >
+                          {body}
+                        </button>
+                        <button className="notification-remove" type="button" aria-label={`Remover notificação: ${title}`} onClick={() => void removeOne(item.id)}>
+                          X
+                        </button>
+                      </div>
                     )}
                   </li>
                 );

@@ -80,5 +80,27 @@ export function useNotifications() {
     setUnreadCount(result.unread_count);
   }
 
-  return { items, unreadCount, loading, error, refresh, markRead, markAllRead };
+  async function remove(notificationId: string) {
+    const result = await notificationsApi.remove(notificationId);
+    setItems((current) => current.filter((item) => item.id !== notificationId));
+    setUnreadCount(result.unread_count);
+  }
+
+  async function removeAll() {
+    const result = await notificationsApi.removeAll();
+    setItems([]);
+    setUnreadCount(result.unread_count);
+  }
+
+  return {
+    items,
+    unreadCount,
+    loading,
+    error,
+    refresh,
+    markRead,
+    markAllRead,
+    remove,
+    removeAll,
+  };
 }
