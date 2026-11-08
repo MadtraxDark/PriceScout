@@ -222,6 +222,7 @@ function storeInfoToCatalogStore(store: StoreInfo): CatalogStore {
     implemented: store.implemented,
     match_enabled: store.match_enabled ?? true,
     match_disabled_reason: store.match_disabled_reason ?? null,
+    access_blocked: store.access_blocked === true,
     image_fetch_cost: store.image_fetch_cost ?? (store.supports_images ? "low" : "unsupported"),
     default_include_images:
       store.default_include_images ??
@@ -721,6 +722,13 @@ export const catalogApi = {
   async approveReviewOffer(productId: string, listingId: string): Promise<CatalogProduct> {
     await api.post<ProductView>(
       `/products/${encodeURIComponent(productId)}/listings/${encodeURIComponent(listingId)}/approve`,
+    );
+    return this.getProduct(productId);
+  },
+
+  async rejectReviewOffer(productId: string, listingId: string): Promise<CatalogProduct> {
+    await api.post<ProductView>(
+      `/products/${encodeURIComponent(productId)}/listings/${encodeURIComponent(listingId)}/reject`,
     );
     return this.getProduct(productId);
   },

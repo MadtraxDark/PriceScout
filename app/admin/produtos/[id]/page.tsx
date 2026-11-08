@@ -166,6 +166,7 @@ const PersistedOffersList = memo(function PersistedOffersList({
   searchLabel,
   onRefreshOffers,
   onApproveReviewOffer,
+  onRejectReviewOffer,
   approvingOfferId,
   liveResults,
   observedRun,
@@ -178,6 +179,7 @@ const PersistedOffersList = memo(function PersistedOffersList({
   searchLabel: string;
   onRefreshOffers?: () => void;
   onApproveReviewOffer: (offer: CatalogOffer) => Promise<void>;
+  onRejectReviewOffer: (offer: CatalogOffer) => Promise<void>;
   approvingOfferId: string | null;
   liveResults: MatchStoreLiveView[];
   observedRun: MatchRunStatusView | null;
@@ -286,7 +288,7 @@ const PersistedOffersList = memo(function PersistedOffersList({
                 })}
               </div>
             )}
-            <ReviewOffers offers={reviewOffers} onApprove={onApproveReviewOffer} approvingOfferId={approvingOfferId} />
+            <ReviewOffers offers={reviewOffers} onApprove={onApproveReviewOffer} onReject={onRejectReviewOffer} approvingOfferId={approvingOfferId} />
           </section>
         );
       })}
@@ -487,6 +489,19 @@ export default function ProductAdminPage({ params }: { params: Promise<{ id: str
       setApprovingOfferId(null);
     }
   }, [id]);
+  const rejectReviewOffer = useCallback(async (offer: CatalogOffer) => {
+    setApprovingOfferId(offer.id);
+    setError("");
+    setNotice("");
+    try {
+      const updated = await catalogApi.rejectReviewOffer(id, offer.id);
+      setProduct((current) => current ? { ...current, variants: updated.variants } : updated);
+      setDraft((current) => ({ ...current, variants: updated.variants }));
+      setNotice("Oferta rejeitada. Ela não voltará a aparecer para revisão.");
+    } finally {
+      setApprovingOfferId(null);
+    }
+  }, [id]);
   const money = useCallback((value: number | null, currency: string) =>
     value == null ? "Não informado" : formatMoney(value, currency), []);
   function requestExit() { if (hasUnsavedChanges) setExitPrompt(true); else router.push("/admin?view=products"); }
@@ -542,6 +557,7 @@ export default function ProductAdminPage({ params }: { params: Promise<{ id: str
           searchLabel={matchButtonLabel}
           onRefreshOffers={refreshOffers}
           onApproveReviewOffer={approveReviewOffer}
+          onRejectReviewOffer={rejectReviewOffer}
           approvingOfferId={approvingOfferId}
         />
         {id ? <MatchRunHistory productId={id} refreshKey={matchHistoryKey} /> : null}

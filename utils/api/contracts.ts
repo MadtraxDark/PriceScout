@@ -324,6 +324,7 @@ export type StoreInfo = {
   supports_images: boolean;
   match_enabled?: boolean;
   match_disabled_reason?: string | null;
+  access_blocked?: boolean;
   image_fetch_cost?: "low" | "high" | "unsupported";
   default_include_images?: boolean;
   logo_svg?: string | null;
@@ -640,6 +641,7 @@ export type CatalogStore = {
   implemented?: boolean;
   match_enabled?: boolean;
   match_disabled_reason?: string | null;
+  access_blocked?: boolean;
   image_fetch_cost?: "low" | "high" | "unsupported";
   default_include_images?: boolean;
 };
