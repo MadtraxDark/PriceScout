@@ -593,6 +593,8 @@ export type ActivityItem = {
     listing_id: string;
     old_seller?: string | null;
     seller?: string | null;
+    observed?: boolean;
+    error_kind?: string | null;
     old_currency: string | null;
     currency: string | null;
     old_price: string | null;

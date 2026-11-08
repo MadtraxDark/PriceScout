@@ -218,6 +218,19 @@ function getCooldown(routeKey: string, scopeKey?: string) {
   return scoped && (!local || scoped.until > local.until) ? scoped : local;
 }
 
+/** Mensagem em pt-BR conforme a causa registrada; nunca expõe códigos internos. */
+function cooldownMessage(error: ApiError, seconds: number): string {
+  const detail = error.details && typeof error.details === "object" ? error.details as Record<string, unknown> : null;
+  const wait = `Tente novamente em ${Math.max(1, seconds)}s.`;
+  if (detail?.rate_limit_policy === "token_bucket") return `Muitas solicitações em pouco tempo. ${wait}`;
+  switch (detail?.kind) {
+    case "blocked": return `A loja bloqueou o acesso temporariamente. ${wait}`;
+    case "timeout": return `A loja demorou demais para responder. ${wait}`;
+    case "local_throttle": return `Pausa de proteção para evitar bloqueio da loja. ${wait}`;
+    default: return `A API pediu uma pausa. ${wait}`;
+  }
+}
+
 function recordCooldown(error: ApiError, routeKey: string, url: string): ApiError {
   const detail = error.details && typeof error.details === "object" ? error.details as Record<string, unknown> : null;
   // Apenas cotas da API pausam outras rotas. Cooldown de loja fica local.
@@ -271,7 +284,8 @@ async function executeRequest<T>(path: string, options: RequestOptions, cooldown
       const scope = routeScopes.get(cooldownKey) ?? apiRateLimitScope((requestInit.method ?? "GET").toUpperCase(), path.split("?")[0]);
       const cooldown = getCooldown(cooldownKey, scope ? `${url.origin} scope:${scope}` : undefined);
       if (cooldown && cooldown.until > Date.now()) {
-        throw new ApiError("A API pediu uma pausa. Aguarde antes de tentar novamente.", 429, cooldown.error.code, true, Math.ceil((cooldown.until - Date.now()) / 1000), cooldown.error.details);
+        const remaining = Math.ceil((cooldown.until - Date.now()) / 1000);
+        throw new ApiError(cooldownMessage(cooldown.error, remaining), 429, cooldown.error.code, true, remaining, cooldown.error.details);
       }
     }
     const requestHeaders = buildRequestHeaders(headers, body, isFormData);

@@ -374,7 +374,7 @@ export default function Home() {
       void checkResolution(result.product);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Não foi possível coletar os dados do produto.";
-      setScrapeStatus("error"); setScrapeError(`Falha na etapa “${messages[currentProgressIndex]}” ${message}`);
+      setScrapeStatus("error"); setScrapeError(`Não foi possível coletar o produto. ${message}`);
     } finally {
       window.clearInterval(progressTimer);
     }

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ImageWithState } from "@/components/ImageViewer";
 import type { ActivityItem } from "@/utils/api/contracts";
 import { activityHref, activityTime } from "@/utils/display/activity";
-import { availabilityLabel, changeDescription, changeLabel } from "@/utils/display/changes";
+import { availabilityLabel, changeDescription, changeLabel, failureKindLabel } from "@/utils/display/changes";
 import { highlightParts } from "@/utils/display/change-search";
 import { formatMoney } from "@/utils/money";
 import styles from "./CatalogChanges.module.css";
@@ -22,10 +22,13 @@ export function CatalogChangeRow({ item, query }: { item: ActivityItem; query: s
   const offer = item.offer;
   const when = activityTime(item.occurred_at);
   const seller = offer?.old_seller || offer?.seller;
+  // Falha de atualização não observou estado novo: os dados anteriores seguem válidos.
+  const unobserved = offer?.observed === false || item.type === "scrape_failed";
+  const noReading = "Sem nova leitura";
   const fields = offer ? [
-    { label: "Preço", before: historicalMoney(offer.old_price, offer.old_currency), after: historicalMoney(offer.new_price, offer.currency) },
-    { label: "Vendedor", before: offer.old_seller || "Não informado", after: offer.seller || "Não informado" },
-    { label: "Disponibilidade", before: availabilityLabel(offer.old_availability), after: availabilityLabel(offer.availability) },
+    { label: "Preço", before: historicalMoney(offer.old_price, offer.old_currency), after: unobserved ? noReading : historicalMoney(offer.new_price, offer.currency) },
+    { label: "Vendedor", before: offer.old_seller || "Não informado", after: unobserved ? noReading : offer.seller || "Não informado" },
+    { label: "Disponibilidade", before: availabilityLabel(offer.old_availability), after: unobserved ? noReading : availabilityLabel(offer.availability) },
   ] : [];
 
   return <li className={styles.row}>
@@ -42,7 +45,8 @@ export function CatalogChangeRow({ item, query }: { item: ActivityItem; query: s
       {item.store && <span><HighlightedText text={item.store.display_name} query={query} /></span>}
     </div>
     <p className={styles.description}>{changeDescription(item)}</p>
-    {seller && <p className={styles.seller}>Vendedor: <HighlightedText text={offer?.old_seller || "Não informado"} query={query} /> <span aria-label="para">→</span> <HighlightedText text={offer?.seller || "Não informado"} query={query} /></p>}
+    {unobserved && <p className={styles.description}>{failureKindLabel(offer?.error_kind)} Os dados anteriores foram mantidos{seller ? <> (vendedor: <HighlightedText text={seller} query={query} />)</> : null}.</p>}
+    {seller && !unobserved && <p className={styles.seller}>Vendedor: <HighlightedText text={offer?.old_seller || "Não informado"} query={query} /> <span aria-label="para">→</span> <HighlightedText text={offer?.seller || "Não informado"} query={query} /></p>}
     {offer && <details className={styles.details}>
       <summary>Ver evidências históricas</summary>
       <div className={styles.evidence}>

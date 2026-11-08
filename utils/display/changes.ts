@@ -19,6 +19,19 @@ export const changeLabels: Record<ActivityType, string> = {
   other: "Outro evento registrado",
 };
 
+const failureKindLabels: Record<string, string> = {
+  blocked: "A loja bloqueou o acesso temporariamente.",
+  timeout: "A loja demorou demais para responder.",
+  extraction: "A página foi aberta, mas os dados não puderam ser lidos.",
+  upstream_error: "A loja respondeu com erro.",
+  not_found: "A loja informou que a página do produto não existe.",
+};
+
+/** Motivo legível de uma atualização que falhou; sem expor códigos internos. */
+export function failureKindLabel(kind: string | null | undefined): string {
+  return (kind && failureKindLabels[kind]) || "Não foi possível atualizar agora.";
+}
+
 export function changeLabel(type: string): string {
   return changeLabels[type as ActivityType] ?? "Outro evento registrado";
 }
