@@ -49,6 +49,12 @@ import type {
   UnreadCountResponse,
 } from "@/utils/api/contracts";
 import { parseMoney } from "@/utils/api/contracts";
+import {
+  cashDiscountFromMetadata,
+  installmentInterestFreeFromMetadata,
+  installmentTotalFromMetadata,
+  pixDiscountPercentFor,
+} from "@/utils/api/payment-conditions";
 import { productImportMessage } from "@/utils/display/product-resolution";
 
 // =============================================================================
@@ -232,10 +238,10 @@ function productPriceItemToPreview(item: ProductPriceItem, sourceUrl: string): P
   const pix = parseMoney(item.pix_price);
   const card = parseMoney(item.price);
 
-  const pixDiscountPercent =
-    pix !== null && original !== null && original > 0
-      ? Math.round(((original - pix) / original) * 100)
-      : parseMoney(item.discount_percentage);
+  const metadata = (item as { metadata?: unknown }).metadata;
+  const pixDiscountPercent = pixDiscountPercentFor(pix, original, parseMoney(item.discount_percentage));
+  const cashDiscount = cashDiscountFromMetadata(metadata);
+  const declaredInstallmentTotal = installmentTotalFromMetadata(metadata);
 
   const images = (item.images ?? [])
     .filter((img): img is string => typeof img === "string" && img.trim() !== "")
@@ -247,8 +253,9 @@ function productPriceItemToPreview(item: ProductPriceItem, sourceUrl: string): P
           quantity: item.installment_count,
           amount: parseMoney(item.installment_price) ?? 0,
           total:
+            declaredInstallmentTotal ??
             (parseMoney(item.installment_price) ?? 0) * item.installment_count,
-          interestFree: null as boolean | null,
+          interestFree: installmentInterestFreeFromMetadata(metadata),
         }
       : null;
 
@@ -271,6 +278,7 @@ function productPriceItemToPreview(item: ProductPriceItem, sourceUrl: string): P
     originalPrice: original,
     pixPrice: pix,
     pixDiscountPercent,
+    cashDiscount,
     cardPrice: card,
     installments,
     priceDifferencePixToCard: pix !== null && card !== null ? card - pix : null,

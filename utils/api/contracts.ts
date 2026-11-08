@@ -1,3 +1,4 @@
+import type { CashDiscount } from "./payment-conditions";
 // =============================================================================
 // Tipos da API ScoutApiV2 (contratos do backend)
 // =============================================================================
@@ -379,6 +380,7 @@ export type ProductPreview = {
   originalPrice: number | null;
   pixPrice: number | null;
   pixDiscountPercent: number | null;
+  cashDiscount?: CashDiscount | null;
   cardPrice: number | null;
   installments: { quantity: number; amount: number; total: number; interestFree?: boolean | null } | null;
   priceDifferencePixToCard: number | null;

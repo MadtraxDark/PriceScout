@@ -16,6 +16,7 @@ import { evaluateImportGate, importGateMessage, IMPORT_CONFLICT_ERROR, IMPORT_RE
 import { imageAvailabilityView } from "@/utils/display/image-availability";
 import type { CatalogOverview as CatalogOverviewData, CatalogProduct, CatalogStore, ExistingCatalogProduct, ProductImportDecision, ProductPreview, ProductResolutionView } from "@/utils/api/contracts";
 import { productMatchedByLabel, productResolutionLabel } from "@/utils/display/product-resolution";
+import { cashDiscountLabel } from "@/utils/api/payment-conditions";
 import {
   defaultIncludeImagesForStore,
   matchStoreByHostname,
@@ -835,15 +836,24 @@ function ReviewPreview({ product, approved, onApprove, alreadyRegistered, onCanc
               <strong>{money(product.cardPrice)}</strong>
               <small>
                 {product.installments?.quantity && product.installments?.amount
-                  ? `${product.installments.quantity}x de ${money(product.installments.amount)}`
+                  ? `${product.installments.quantity}x de ${money(product.installments.amount)}${product.installments.interestFree ? " sem juros" : ""}${product.installments.total ? ` (total ${money(product.installments.total)})` : ""}`
                   : "—"}
               </small>
+              {product.cashDiscount && <small>{cashDiscountLabel(product.cashDiscount)}</small>}
             </div>
-            <div>
-              <span>Economia no Pix</span>
-              <strong>{money(product.priceDifferencePixToCard)}</strong>
-              <small>Comparado ao cartão</small>
-            </div>
+            {product.pixPrice === null && product.cashDiscount && product.originalPrice !== null && product.cardPrice !== null ? (
+              <div>
+                <span>Economia à vista</span>
+                <strong>{money(product.originalPrice - product.cardPrice)}</strong>
+                <small>Comparado ao total parcelado</small>
+              </div>
+            ) : (
+              <div>
+                <span>Economia no Pix</span>
+                <strong>{money(product.priceDifferencePixToCard)}</strong>
+                <small>Comparado ao cartão</small>
+              </div>
+            )}
           </div>
 
           <div className="review-meta">
