@@ -11,7 +11,8 @@
     "test:money": "npx --yes tsx --test utils/money.test.ts",
     "test:images": "npx --yes tsx --test utils/api/product-images.test.ts",
     "test:match-run": "npx --yes tsx --test utils/match-run.test.ts",
-    "test:display": "npx --yes tsx --test utils/display/display-labels.test.ts",
+    "test:import": "npx --yes tsx --test utils/api/import-product.test.ts utils/display/import-gate.test.ts utils/api/import-errors.test.ts",
+    "test:display":"npx --yes tsx --test utils/display/display-labels.test.ts",
     "test:requests": "npx --yes tsx --test utils/api/request-control.test.ts utils/api/client.test.ts utils/visible-polling.test.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -28,7 +29,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "^15.5.29",
+    "eslint-config-next": "^16.4.5",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

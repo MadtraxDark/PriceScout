@@ -38,12 +38,18 @@ import type {
   ProductPreviewResponse,
   ProductRegisterRequest,
   ProductRegisterResponse,
+  ProductResolutionKind,
+  ProductResolutionView,
+  ProductResolveResponse,
+  ProductImportDecision,
+  ExistingCatalogProduct,
   ProductView,
   PublicUser,
   StoreInfo,
   UnreadCountResponse,
 } from "@/utils/api/contracts";
 import { parseMoney } from "@/utils/api/contracts";
+import { productImportMessage } from "@/utils/display/product-resolution";
 
 // =============================================================================
 // Tipos exportados para as páginas
@@ -400,6 +406,51 @@ function moneyOrUndefined(
   return value.toFixed(2);
 }
 
+/** Limite de imagens aceitas por cadastro no catálogo. */
+const MAX_REGISTER_IMAGES = 20;
+
+function approvedImageUrls(product: ProductPreview): string[] {
+  return Array.from(new Set((product.images ?? [])
+    .map((image) => image.url?.trim())
+    .filter((url): url is string => Boolean(url))));
+}
+
+/** Corpo único de POST /products e /products/resolve (mesmos identificadores). */
+function registerBodyFromPreview(product: ProductPreview): ProductRegisterRequest {
+  return {
+    title: product.name ?? "Produto sem nome",
+    brand: product.brand,
+    model: product.model ?? null,
+    variant: product.variant ?? null,
+    gtin: product.gtin,
+    store: product.source,
+    country: product.country ?? "BR",
+    product_id: product.productId,
+    sku: product.sourceProductId,
+    url: product.url,
+    canonical_url: product.url,
+    attributes: {},
+    price: moneyOrUndefined(product.cardPrice ?? product.originalPrice),
+    pix_price: moneyOrUndefined(product.pixPrice),
+    original_price: moneyOrUndefined(product.originalPrice),
+    currency: product.currency ?? "BRL",
+    seller: product.seller,
+    available: true,
+    images: approvedImageUrls(product).slice(0, MAX_REGISTER_IMAGES)
+      .map((source_url, position) => ({ source_url, position, is_main: position === 0 })),
+  };
+}
+
+function existingProductFromView(view: ProductView): ExistingCatalogProduct {
+  return {
+    id: view.id,
+    name: view.title || null,
+    brand: view.brand ?? null,
+    primary_image_url: view.primary_image_url ? resolveMediaUrl(view.primary_image_url) : null,
+    created_at: view.created_at ?? null,
+  };
+}
+
 // =============================================================================
 // authApi
 // =============================================================================
@@ -587,46 +638,58 @@ export const catalogApi = {
   },
 
   // -------------------------------------------------------------------------
+  // Resolver identidade — POST /products/resolve (somente leitura)
+  // Informa, antes da aprovação, se o preview é o mesmo anúncio, o mesmo
+  // produto em outra loja, um caso para revisão ou um produto novo.
+  // A API é a autoridade; esta consulta só orienta a interface.
+  // -------------------------------------------------------------------------
+  async resolveProduct(
+    product: ProductPreview,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<ProductResolutionView> {
+    const { images: _images, ...body } = registerBodyFromPreview(product);
+    void _images;
+    const result = await api.post<ProductResolveResponse>("/products/resolve", body, {
+      signal: options.signal,
+    });
+    return {
+      kind: result.resolution,
+      matchedBy: result.matched_by ?? null,
+      confidence: parseMoney(result.match_confidence),
+      existing: result.product ? existingProductFromView(result.product) : null,
+    };
+  },
+
+  // -------------------------------------------------------------------------
   // Importar produto — POST /products
   // -------------------------------------------------------------------------
   async importProduct(
     product: ProductPreview,
     _previewId?: string,
-  ): Promise<{ product: CatalogProduct; message?: string }> {
+    decision?: ProductImportDecision | null,
+  ): Promise<{
+    product: CatalogProduct;
+    message?: string;
+    resolution: ProductResolutionKind | null;
+    listingCreated: boolean;
+  }> {
     void _previewId;
-    const body: ProductRegisterRequest = {
-      title: product.name ?? "Produto sem nome",
-      brand: product.brand,
-      model: product.model ?? null,
-      variant: product.variant ?? null,
-      gtin: product.gtin,
-      store: product.source,
-      country: product.country ?? "BR",
-      product_id: product.productId,
-      sku: product.sourceProductId,
-      url: product.url,
-      canonical_url: product.url,
-      attributes: {},
-      price: moneyOrUndefined(product.cardPrice ?? product.originalPrice),
-      pix_price: moneyOrUndefined(product.pixPrice),
-      original_price: moneyOrUndefined(product.originalPrice),
-      currency: product.currency ?? "BRL",
-      seller: product.seller,
-      available: true,
-    };
-    const approvedImageUrls = Array.from(new Set((product.images ?? [])
-      .map((image) => image.url?.trim())
-      .filter((url): url is string => Boolean(url))));
-    body.images = approvedImageUrls.slice(0, 20)
-      .map((source_url, position) => ({ source_url, position, is_main: position === 0 }));
+    const body = registerBodyFromPreview(product);
+    if (decision?.kind === "attach") body.target_product_id = decision.productId;
+    if (decision?.kind === "create") body.create_new_product = true;
+    const imagesTotal = approvedImageUrls(product).length;
     const result = await api.post<ProductRegisterResponse>("/products", body);
+    const resolution = result.resolution ?? (result.created ? "new_product" : null);
+    const imagesQueued = resolution === "new_product" ? body.images?.length ?? 0 : 0;
     return {
       product: productViewToCatalogProduct(result.product),
-      message: body.images.length
-        ? approvedImageUrls.length > 20
-          ? `Produto salvo. As primeiras 20 de ${approvedImageUrls.length} imagens serão processadas em segundo plano (limite do catálogo).`
-          : "Produto salvo. As imagens serão processadas em segundo plano."
-        : result.created ? "Produto cadastrado." : "Produto reutilizado.",
+      resolution,
+      listingCreated: result.listing_created === true,
+      message: productImportMessage(resolution, {
+        listingCreated: result.listing_created === true,
+        imagesQueued,
+        imagesTotal,
+      }),
     };
   },
 

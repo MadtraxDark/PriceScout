@@ -6,7 +6,7 @@
 
 ## Conhecimento consolidado
 
-Nenhuma memória semântica foi validada ainda.
+- [Resolução de identidade de produto](semantic/product-identity-resolution.md): duplicidade de `CanonicalProduct` é decidida pela ScoutApi (`/products` e `/products/resolve`), não pelo frontend. Falha da consulta bloqueia a aprovação (ADR 0008).
 
 ## Procedimentos
 

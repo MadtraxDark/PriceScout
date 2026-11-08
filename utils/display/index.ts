@@ -14,6 +14,24 @@ export {
   matchStoreStatusLabel,
 } from "./match-store-status";
 export {
+  PRODUCT_MATCHED_BY_LABELS,
+  PRODUCT_RESOLUTION_LABELS,
+  productImportMessage,
+  productMatchedByLabel,
+  productResolutionLabel,
+} from "./product-resolution";
+export {
+  IMPORT_GATE_MESSAGES,
+  IMPORT_RETRY_LABEL,
+  IMPORT_RETRYING_LABEL,
+  evaluateImportGate,
+  importGateMessage,
+  type ImportGate,
+  type ImportGateReason,
+  type ImportGateState,
+  type ResolutionStatus,
+} from "./import-gate";
+export {
   NOTIFICATION_TYPE_LABELS,
   notificationTypeLabel,
   type NotificationType,

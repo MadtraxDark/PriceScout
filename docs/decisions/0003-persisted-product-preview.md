@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. O tratamento de duplicidade (`409` e bloqueio da importacao) foi substituido pela ADR 0007 em 2026-11-08: a ScoutApi atual nao mantem previa no servidor nem retorna `409 existing_product` para produto ja cadastrado.
 
 ## Contexto
 

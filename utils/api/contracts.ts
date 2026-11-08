@@ -149,21 +149,52 @@ export type ProductRegisterRequest = {
   sku?: string | null;
   url?: string | null;
   canonical_url?: string | null;
-  /** Preço do preview — seed do OfferSnapshot inicial no ScoutApiV2. */
+  /** Preço do preview — seed do OfferSnapshot inicial na ScoutApi. */
   price?: number | string | null;
   pix_price?: number | string | null;
   original_price?: number | string | null;
   currency?: string | null;
   seller?: string | null;
   available?: boolean | null;
+  /** Produto confirmado pelo usuário quando a resolução pediu revisão. */
+  target_product_id?: string | null;
+  /** Confirmação explícita de que não é o mesmo produto do candidato. */
+  create_new_product?: boolean;
 };
+
+/** Como a API resolveu a identidade de um cadastro (POST /products e /products/resolve). */
+export type ProductResolutionKind =
+  | "existing_listing"
+  | "existing_product_new_listing"
+  | "needs_review"
+  | "new_product";
+
+/** Evidência usada pela API para reconhecer um produto existente. */
+export type ProductMatchedBy = "store_identity" | "gtin" | "identity" | "user_confirmed";
 
 export type ProductRegisterResponse = {
   created: boolean;
   listing_created: boolean;
   product: ProductView;
   listing: ProductListingView | null;
+  resolution?: ProductResolutionKind;
+  matched_by?: ProductMatchedBy | null;
+  match_confidence?: string | number | null;
 };
+
+/** POST /products/resolve — somente leitura, não grava nada. */
+export type ProductResolveResponse = {
+  resolution: ProductResolutionKind;
+  matched_by: ProductMatchedBy | null;
+  match_confidence: string | number | null;
+  product: ProductView | null;
+  listing: ProductListingView | null;
+};
+
+/** Decisão do usuário quando a resolução retornou `needs_review`. */
+export type ProductImportDecision =
+  | { kind: "attach"; productId: string }
+  | { kind: "create" };
 
 export type ProductUpdateRequest = {
   title?: string | null;
@@ -379,6 +410,15 @@ export type ExistingCatalogProduct = {
   primary_image_url?: string | null;
   main_image_url?: string | null;
   created_at?: string | null;
+};
+
+/** Resultado da resolução de identidade apresentado na revisão do preview. */
+export type ProductResolutionView = {
+  kind: ProductResolutionKind;
+  matchedBy: ProductMatchedBy | null;
+  confidence: number | null;
+  /** Produto existente (ou candidato em revisão); null para produto novo. */
+  existing: ExistingCatalogProduct | null;
 };
 
 // ---------------------------------------------------------------------------

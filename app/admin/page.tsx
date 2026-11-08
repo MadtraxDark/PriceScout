@@ -10,10 +10,12 @@ import ImageViewer, { ImageWithState } from "@/components/ImageViewer";
 import StoreConfigurationForm, { storeLogoDataUrl as svgDataUrl } from "@/components/StoreConfigurationForm";
 import { catalogApi } from "@/utils/api/services";
 import { startVisiblePolling } from "@/utils/visible-polling";
-import { ApiError } from "@/utils/api/client";
 import { resolveMediaUrl } from "@/utils/api/product-images";
+import { classifyResolveError, isIdentityConflict, isIntegrityError, resolveProductWithTimeout, reviewCandidateFromError } from "@/utils/api/import-errors";
+import { evaluateImportGate, importGateMessage, IMPORT_CONFLICT_ERROR, IMPORT_RECHECK_NOTICE, IMPORT_RETRY_LABEL, type ResolutionStatus } from "@/utils/display/import-gate";
 import { imageAvailabilityView } from "@/utils/display/image-availability";
-import type { CatalogOverview as CatalogOverviewData, CatalogProduct, CatalogStore, ExistingCatalogProduct, ProductPreview } from "@/utils/api/contracts";
+import type { CatalogOverview as CatalogOverviewData, CatalogProduct, CatalogStore, ExistingCatalogProduct, ProductImportDecision, ProductPreview, ProductResolutionView } from "@/utils/api/contracts";
+import { productMatchedByLabel, productResolutionLabel } from "@/utils/display/product-resolution";
 import {
   defaultIncludeImagesForStore,
   matchStoreByHostname,
@@ -28,6 +30,9 @@ type View = "overview" | "products" | "stores" | "product";
 type ScrapeStatus = "idle" | "loading" | "ready" | "error";
 type ImportStepStatus = "pending" | "active" | "completed" | "error";
 type ImportStep = { id: string; label: string; status: ImportStepStatus };
+
+/** Deve acompanhar a duração de `.preview-collapse` em globals.css. */
+const PREVIEW_CLOSE_MS = 260;
 
 function toStoreCapability(store: CatalogStore): StoreCapability {
   return {
@@ -54,30 +59,6 @@ function progressMessagesForPreview(includeImages: boolean): string[] {
     return [...base, "Buscando imagens...", "Preparando preview..."];
   }
   return [...base, "Preparando preview..."];
-}
-
-function duplicateProductFromError(error: unknown): ExistingCatalogProduct | null {
-  if (!(error instanceof ApiError) || error.status !== 409 || !error.details || typeof error.details !== "object") return null;
-  const d = error.details as Record<string, unknown>;
-
-  // Formato ScoutApiV2: error.details = {code, message, existing_product, ...}
-  if ("existing_product" in d && d.existing_product && typeof d.existing_product === "object") {
-    const ep = d.existing_product as Record<string, unknown>;
-    return {
-      id: String(ep.id ?? ""),
-      name: ep.title ? String(ep.title) : ep.name ? String(ep.name) : null,
-      brand: ep.brand != null ? String(ep.brand) : null,
-      created_at: ep.created_at ? String(ep.created_at) : null,
-    };
-  }
-
-  // Formato legado: error.details = {detail: {existing_product}}
-  if ("detail" in d && d.detail && typeof d.detail === "object") {
-    const inner = d.detail as { existing_product?: ExistingCatalogProduct };
-    return inner.existing_product ?? null;
-  }
-
-  return null;
 }
 
 function formatCatalogDate(value?: string | null): string {
@@ -158,12 +139,17 @@ export default function Home() {
     : "overview";
   const [notice, setNotice] = useState("");
   const [productUrl, setProductUrl] = useState("");
+  const [closingPreview, setClosingPreview] = useState(false);
   const [scrapeStatus, setScrapeStatus] = useState<ScrapeStatus>("idle");
   const [scrapedProduct, setScrapedProduct] = useState<ProductPreview | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [scrapeError, setScrapeError] = useState("");
   const [existingProductId, setExistingProductId] = useState<string | null>(null);
   const [duplicateProduct, setDuplicateProduct] = useState<ExistingCatalogProduct | null>(null);
+  const [resolution, setResolution] = useState<ProductResolutionView | null>(null);
+  const [resolutionStatus, setResolutionStatus] = useState<ResolutionStatus>("idle");
+  const [reviewDecision, setReviewDecision] = useState<ProductImportDecision | null>(null);
+  const resolutionRequestRef = useRef(0);
   const [approvedPreview, setApprovedPreview] = useState(false);
   const [discardPrompt, setDiscardPrompt] = useState(false);
   const [reviewedUrl, setReviewedUrl] = useState("");
@@ -304,6 +290,7 @@ export default function Home() {
         setReviewedUrl(saved.url ?? result.product.url);
         setScrapedProduct(result.product);
         setScrapeStatus("ready");
+        void checkResolution(result.product);
       } catch {
         window.localStorage.removeItem("pricescout:product-preview");
       }
@@ -329,6 +316,38 @@ export default function Home() {
     }
   }
 
+  function resetResolution() {
+    resolutionRequestRef.current += 1;
+    setResolution(null);
+    setResolutionStatus("idle");
+    setReviewDecision(null);
+  }
+
+  /**
+   * Consulta somente leitura (POST /products/resolve) para orientar a revisão.
+   * A API continua sendo a autoridade no POST /products; uma falha aqui não
+   * libera nem bloqueia o cadastro por conta própria.
+   */
+  async function checkResolution(product: ProductPreview) {
+    const requestId = ++resolutionRequestRef.current;
+    setResolution(null);
+    setReviewDecision(null);
+    setResolutionStatus("loading");
+    try {
+      const result = await resolveProductWithTimeout((p, o) => catalogApi.resolveProduct(p, o), product);
+      if (requestId !== resolutionRequestRef.current) return;
+      setResolution(result);
+      setResolutionStatus("ready");
+      if (result.kind === "existing_listing" && result.existing) {
+        setDuplicateProduct(result.existing);
+        setExistingProductId(result.existing.id);
+      }
+    } catch (error) {
+      if (requestId !== resolutionRequestRef.current) return;
+      setResolutionStatus(classifyResolveError(error));
+    }
+  }
+
   function revealPreview() {
     previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -338,7 +357,7 @@ export default function Home() {
     if (!parseHttpUrl(productUrl)) { setScrapeStatus("error"); setScrapeError("Informe um link de produto válido usando http:// ou https://."); return; }
     if (previewId) void catalogApi.discardPreview(previewId).catch(() => undefined);
     window.localStorage.removeItem("pricescout:product-preview");
-    setPreviewId(null); setExistingProductId(null); setDuplicateProduct(null); setScrapeStatus("loading"); setScrapeError(""); setNotice(""); setScrapedProduct(null); setApprovedPreview(false); setProgressIndex(0);
+    setPreviewId(null); setExistingProductId(null); setDuplicateProduct(null); resetResolution(); setScrapeStatus("loading"); setScrapeError(""); setNotice(""); setScrapedProduct(null); setApprovedPreview(false); setProgressIndex(0);
     const messages = progressMessagesForPreview(includeImages);
     let currentProgressIndex = 0;
     const progressTimer = window.setInterval(() => {
@@ -352,19 +371,18 @@ export default function Home() {
       setScrapedProduct(result.product); setReviewedUrl(productUrl); setPreviewId(result.preview_id ?? null); setScrapeStatus("ready");
       window.localStorage.setItem("pricescout:product-preview", JSON.stringify({ previewId: result.preview_id, product: result.product, expiresAt: result.expires_at, url: productUrl }));
       window.setTimeout(revealPreview, 80);
+      void checkResolution(result.product);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Não foi possível coletar os dados do produto.";
-      const duplicate = duplicateProductFromError(error);
-      setExistingProductId(duplicate?.id ?? null);
-      setDuplicateProduct(duplicate);
-      setScrapeStatus("error"); setScrapeError(duplicate ? "Produto já cadastrado. A prévia não pode ser importada novamente." : `Falha na etapa “${messages[currentProgressIndex]}” ${message}`);
+      setScrapeStatus("error"); setScrapeError(`Falha na etapa “${messages[currentProgressIndex]}” ${message}`);
     } finally {
       window.clearInterval(progressTimer);
     }
   }
 
   async function approvePreview() {
-    if (!scrapedProduct || importing || importInFlightRef.current || approvedPreview || duplicateProduct) return;
+    if (!scrapedProduct || importing || importInFlightRef.current || approvedPreview) return;
+    if (!evaluateImportGate({ resolutionStatus, resolution, duplicateProduct, reviewDecision }).canApprove) return;
     importInFlightRef.current = true;
     setImporting(true);
     setImportError("");
@@ -379,7 +397,7 @@ export default function Home() {
       completeStep("request");
       currentStepId = "processing";
       setStep(currentStepId, "active");
-      const result = await catalogApi.importProduct(scrapedProduct, previewId ?? undefined);
+      const result = await catalogApi.importProduct(scrapedProduct, previewId ?? undefined, reviewDecision);
       completeStep("processing");
       currentStepId = "refresh";
       setStep(currentStepId, "active");
@@ -398,6 +416,7 @@ export default function Home() {
         setPreviewId(null);
         setExistingProductId(null);
         setDuplicateProduct(null);
+        resetResolution();
         window.localStorage.removeItem("pricescout:product-preview");
         setScrapeStatus("idle");
         setScrapeError("");
@@ -412,16 +431,27 @@ export default function Home() {
     } catch (error) {
       setStep(currentStepId, "error");
       const message = error instanceof Error ? error.message : "Não foi possível concluir a importação.";
-      const duplicate = duplicateProductFromError(error);
-      setExistingProductId(duplicate?.id ?? null);
-      setDuplicateProduct(duplicate);
-      if (duplicate) {
-        if (previewId) void catalogApi.discardPreview(previewId).catch(() => undefined);
-        window.localStorage.removeItem("pricescout:product-preview");
-        setPreviewId(null);
+      const candidate = reviewCandidateFromError(error);
+      if (candidate) {
+        // A API não criou nada: pede a decisão do usuário sobre o candidato.
+        setResolution({ kind: "needs_review", matchedBy: "identity", confidence: candidate.confidence, existing: candidate.product });
+        setResolutionStatus("ready");
+        setReviewDecision(null);
+        setImportError("Possível produto já cadastrado. Confirme abaixo se a oferta pertence a ele.");
+        setNotice("Nenhum registro foi criado. Escolha como continuar e aprove novamente.");
+      } else if (isIdentityConflict(error)) {
+        setResolutionStatus("conflict");
+        setReviewDecision(null);
+        setImportError(IMPORT_CONFLICT_ERROR);
+        setNotice("");
+      } else if (isIntegrityError(error)) {
+        setImportError(message);
+        setNotice(IMPORT_RECHECK_NOTICE);
+        void checkResolution(scrapedProduct);
+      } else {
+        setImportError(message);
+        setNotice("A importação foi interrompida. Os dados da prévia foram preservados para nova tentativa.");
       }
-      setImportError(duplicate ? "Produto já cadastrado. A importação foi interrompida." : message);
-      setNotice(duplicate ? "A importação foi interrompida porque o produto já está cadastrado." : "A importação foi interrompida. Os dados da prévia foram preservados para nova tentativa.");
       setImporting(false);
       importInFlightRef.current = false;
     }
@@ -430,7 +460,9 @@ export default function Home() {
   function changeProductUrl(value: string) {
     setProductUrl(value);
     setIncludeImagesOverride(null);
-    if (value !== reviewedUrl) {
+    // With a preview on screen the duplicate state belongs to that preview;
+    // it is cleared only when the preview is discarded or replaced.
+    if (value !== reviewedUrl && !scrapedProduct) {
       setExistingProductId(null);
       setDuplicateProduct(null);
     }
@@ -449,6 +481,7 @@ export default function Home() {
     setPreviewId(null);
     setExistingProductId(null);
     setDuplicateProduct(null);
+    resetResolution();
     setApprovedPreview(false);
     setReviewedUrl("");
     setDiscardPrompt(false);
@@ -456,6 +489,15 @@ export default function Home() {
     setProgressIndex(0);
     setPreviewVisible(false);
     setNotice("");
+  }
+
+  /** Cancelar: toca a animação de saída e só então descarta a prévia (sem escrita no catálogo). */
+  function cancelPreview() {
+    if (closingPreview) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) { discardPreviousProduct(); return; }
+    setClosingPreview(true);
+    window.setTimeout(() => { discardPreviousProduct(); setClosingPreview(false); }, PREVIEW_CLOSE_MS);
   }
 
   async function saveStore(input: { name: string; url: string; country: string; currency: string; logo_svg?: string | null; logo_file?: File | null }) {
@@ -481,7 +523,7 @@ export default function Home() {
   }
 
   return <>
-    <header className="topbar"><div className="mobile-logo"><Link href="/admin" aria-label="PriceScout home"><PriceScoutLogo /></Link></div><div className="topbar-actions"><NotificationPanel /><div className="topbar-divider" /><span className="environment">API externa</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <div className="overview-layout"><Overview openView={openView} /><CatalogActivity /></div> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : view === "stores" ? <CatalogView kind="stores" products={catalogProducts} stores={catalogStores} loading={catalogLoading} onEditStore={setEditingStore} /> : <FormView notice={notice} onSubmit={submitProduct} productUrl={productUrl} onProductUrlChange={changeProductUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} existingProductId={existingProductId} duplicateProduct={duplicateProduct} approvedPreview={approvedPreview} onApprove={approvePreview} progressMessage={progressMessagesForPreview(includeImages)[progressIndex] ?? "Preparando preview..."} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} matchedStore={matchedStore} includeImages={includeImages} onIncludeImagesChange={(value) => { setIncludeImagesOverride(value); }} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}{editingStore && <div className="store-editor-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingStore(null); }}><section className="store-editor" role="dialog" aria-modal="true" aria-labelledby="store-editor-title"><div className="store-editor-heading"><div className="store-editor-header-text"><div className="store-editor-kicker"><Icon name="store" /><span>Loja cadastrada</span></div><h2 id="store-editor-title">Editar loja</h2></div><button className="store-editor-close lightbox-close" type="button" onClick={() => setEditingStore(null)} aria-label="Fechar edição"><Icon name="close" /></button></div><StoreConfigurationForm store={editingStore} onCancel={() => setEditingStore(null)} onSave={saveStore} /></section></div>}</>;
+    <header className="topbar"><div className="mobile-logo"><Link href="/admin" aria-label="PriceScout home"><PriceScoutLogo /></Link></div><div className="topbar-actions"><NotificationPanel /><div className="topbar-divider" /><span className="environment">API externa</span></div></header><div className="content">{catalogError && <p className="error-notice" role="status">{catalogError}</p>}{view === "overview" ? <div className="overview-layout"><Overview openView={openView} /><CatalogActivity /></div> : view === "products" ? <CatalogView kind="products" openView={openView} products={catalogProducts} stores={catalogStores} loading={catalogLoading} /> : view === "stores" ? <CatalogView kind="stores" products={catalogProducts} stores={catalogStores} loading={catalogLoading} onEditStore={setEditingStore} /> : <FormView notice={notice} onSubmit={submitProduct} productUrl={productUrl} onProductUrlChange={changeProductUrl} scrapeStatus={scrapeStatus} scrapedProduct={scrapedProduct} scrapeError={scrapeError} existingProductId={existingProductId} duplicateProduct={duplicateProduct} resolution={resolution} resolutionStatus={resolutionStatus} reviewDecision={reviewDecision} onReviewDecision={setReviewDecision} onRetryResolution={() => { if (scrapedProduct) void checkResolution(scrapedProduct); }} approvedPreview={approvedPreview} onApprove={approvePreview} onCancelPreview={cancelPreview} closingPreview={closingPreview} progressMessage={progressMessagesForPreview(includeImages)[progressIndex] ?? "Preparando preview..."} previewVisible={previewVisible} onRevealPreview={revealPreview} previewRef={previewRef} importing={importing} importSteps={importSteps} importError={importError} importPanelRef={importPanelRef} importSuccessRef={importSuccessRef} matchedStore={matchedStore} includeImages={includeImages} onIncludeImagesChange={(value) => { setIncludeImagesOverride(value); }} />}</div>{discardPrompt && scrapedProduct && <DiscardDialog product={scrapedProduct} onKeep={keepPreviousProduct} onDiscard={discardPreviousProduct} />}{editingStore && <div className="store-editor-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingStore(null); }}><section className="store-editor" role="dialog" aria-modal="true" aria-labelledby="store-editor-title"><div className="store-editor-heading"><div className="store-editor-header-text"><div className="store-editor-kicker"><Icon name="store" /><span>Loja cadastrada</span></div><h2 id="store-editor-title">Editar loja</h2></div><button className="store-editor-close lightbox-close" type="button" onClick={() => setEditingStore(null)} aria-label="Fechar edição"><Icon name="close" /></button></div><StoreConfigurationForm store={editingStore} onCancel={() => setEditingStore(null)} onSave={saveStore} /></section></div>}</>;
 }
 
 function Overview({ openView }: { openView: (view: View) => void }) {
@@ -533,7 +575,7 @@ function CatalogView({ kind, openView, products, stores, loading, onEditStore = 
   return <div className="catalog-page"><div className="page-intro"><div><p className="eyebrow">Catálogo</p><h1>{isProducts ? "Produtos cadastrados." : "Lojas cadastradas."}</h1><p className="intro-copy">{isProducts ? "Identifique rapidamente cada produto pela imagem e pelo nome." : "Consulte as lojas e sites confirmados como fontes oficiais."}</p></div>{isProducts && openView && <button className="primary-button" onClick={() => openView("product")}><Icon name="plus" /> Adicionar produto</button>}</div>{loading ? <section className="empty-state"><h2>Carregando registros...</h2></section> : rows.length === 0 ? <section className="empty-state"><span className="empty-icon"><Icon name={isProducts ? "box" : "store"} /></span><h2>Nenhum registro disponível</h2><p>{isProducts ? "Os produtos aparecerão aqui depois que forem cadastrados e aprovados." : "As lojas pré-cadastradas aparecerão aqui quando estiverem disponíveis."}</p>{isProducts && openView && <button className="outline-button" onClick={() => openView("product")}><Icon name="plus" /> Cadastrar produto</button>}</section> : isProducts ? <section className="catalog-grid" aria-label="Produtos cadastrados">{products.map((product) => { const firstOffer = product.variants.flatMap((variant) => variant.offers)[0]; const image = product.primary_image_url ?? product.images.find((item) => item.is_main)?.display_url ?? product.images[0]?.display_url ?? null; const noImageMessage = imageAvailabilityView(product.primary_image_status ?? "missing").message; const offerUrl = firstOffer?.canonical_url ?? null; return <article className="catalog-card" key={product.id}><Link className="catalog-card-manage" href={`/admin/produtos/${product.id}`} aria-label={`Gerenciar ${product.canonical_name}`}><div className="catalog-card-media">{image ? <MediaImage key={image} src={image} alt="" className="catalog-media-image" /> : <span className="catalog-card-media-empty" role="status"><span className="media-empty-badge"><Icon name="image" /></span><span className="media-empty-label">{noImageMessage}</span></span>}</div><div className="catalog-card-body"><h2>{product.canonical_name}</h2><span className="catalog-card-link">Gerenciar produto <Icon name="arrow" /></span></div></Link>{offerUrl ? <a className="catalog-card-source" href={offerUrl} target="_blank" rel="noreferrer">Abrir origem <Icon name="external" /></a> : <span className="catalog-card-source">Oferta sem URL disponível</span>}</article>; })}</section> : <section className="catalog-list">{stores.map((store) => <article className="catalog-row" key={store.id}><div className="catalog-row-icon"><StoreLogo store={store} /></div><div className="catalog-row-main"><strong>{store.name}</strong><span>{store.hostname}</span>{store.match_enabled === false ? <small className="store-match-disabled">Comparação temporariamente indisponível{store.match_disabled_reason ? ` (${store.match_disabled_reason})` : ""}</small> : null}</div><div className="catalog-row-meta"><b>{store.productCount} {store.productCount === 1 ? "produto" : "produtos"}</b><span>{store.country} · {store.currency}</span></div><button className="catalog-row-edit" type="button" onClick={() => onEditStore(store)} aria-label={`Editar ${store.name}`}><Icon name="pencil" /></button><a className="catalog-row-link" href={store.url} target="_blank" rel="noreferrer" aria-label={`Abrir ${store.name}`}><Icon name="external" /></a></article>)}</section>}</div>;
 }
 
-function FormView({ notice, onSubmit, productUrl, onProductUrlChange, scrapeStatus, scrapedProduct, scrapeError, existingProductId, duplicateProduct, approvedPreview, onApprove, progressMessage, previewVisible, onRevealPreview, previewRef, importing, importSteps, importError, importPanelRef, importSuccessRef, matchedStore, includeImages, onIncludeImagesChange }: { notice: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; productUrl: string; onProductUrlChange: (value: string) => void; scrapeStatus: ScrapeStatus; scrapedProduct: ProductPreview | null; scrapeError: string; existingProductId: string | null; duplicateProduct: ExistingCatalogProduct | null; approvedPreview: boolean; onApprove: () => void; progressMessage: string; previewVisible: boolean; onRevealPreview: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; importSteps: ImportStep[]; importError: string; importPanelRef: RefObject<HTMLDivElement | null>; importSuccessRef: RefObject<HTMLDivElement | null>; matchedStore: StoreCapability | null; includeImages: boolean; onIncludeImagesChange: (value: boolean) => void }) {
+function FormView({ notice, onSubmit, productUrl, onProductUrlChange, scrapeStatus, scrapedProduct, scrapeError, existingProductId, duplicateProduct, resolution, resolutionStatus, reviewDecision, onReviewDecision, onRetryResolution, approvedPreview, onApprove, onCancelPreview, closingPreview, progressMessage, previewVisible, onRevealPreview, previewRef, importing, importSteps, importError, importPanelRef, importSuccessRef, matchedStore, includeImages, onIncludeImagesChange }: { notice: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; productUrl: string; onProductUrlChange: (value: string) => void; scrapeStatus: ScrapeStatus; scrapedProduct: ProductPreview | null; scrapeError: string; existingProductId: string | null; duplicateProduct: ExistingCatalogProduct | null; resolution: ProductResolutionView | null; resolutionStatus: ResolutionStatus; reviewDecision: ProductImportDecision | null; onReviewDecision: (decision: ProductImportDecision) => void; onRetryResolution: () => void; approvedPreview: boolean; onApprove: () => void; onCancelPreview: () => void; closingPreview: boolean; progressMessage: string; previewVisible: boolean; onRevealPreview: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; importSteps: ImportStep[]; importError: string; importPanelRef: RefObject<HTMLDivElement | null>; importSuccessRef: RefObject<HTMLDivElement | null>; matchedStore: StoreCapability | null; includeImages: boolean; onIncludeImagesChange: (value: boolean) => void }) {
   const detectedUrl = useMemo(() => parseHttpUrl(productUrl), [productUrl]);
   const showImageOption = Boolean(detectedUrl && matchedStore?.supports_images);
   const productFields = <>
@@ -561,6 +603,7 @@ function FormView({ notice, onSubmit, productUrl, onProductUrlChange, scrapeStat
       </label>
     )}
   </>;
+  const importGate = evaluateImportGate({ resolutionStatus, resolution, duplicateProduct, reviewDecision });
   return <div className="form-page">
     <div className="breadcrumb"><span>Visão geral</span><span>/</span><span>Adicionar produto</span></div>
     <div className="form-layout">
@@ -574,7 +617,7 @@ function FormView({ notice, onSubmit, productUrl, onProductUrlChange, scrapeStat
         {notice && <p className="success-notice" role="status"><Icon name={approvedPreview ? "check" : "refresh"} /> {notice}</p>}
       </form>
     </div>
-    {scrapedProduct && <><SpecialStatusSummary product={scrapedProduct} />{(importing || approvedPreview || importError) && <ImportProgress steps={importSteps} error={importError} blocked={Boolean(duplicateProduct)} panelRef={importPanelRef} successRef={importSuccessRef} />}{duplicateProduct && <DuplicateProductNotice product={duplicateProduct} />}<ReviewPreview product={scrapedProduct} approved={approvedPreview} onApprove={onApprove} previewRef={previewRef} importing={importing} blocked={Boolean(duplicateProduct)} /></>}
+    {scrapedProduct && <div className={`preview-collapse${closingPreview ? " is-closing" : ""}`} aria-hidden={closingPreview || undefined}><div className="preview-collapse-inner"><SpecialStatusSummary product={scrapedProduct} />{(importing || approvedPreview || importError) && <ImportProgress steps={importSteps} error={importError} blocked={!importGate.canApprove} panelRef={importPanelRef} successRef={importSuccessRef} />}{duplicateProduct && <DuplicateProductNotice product={duplicateProduct} />}{!duplicateProduct && <ResolutionNotice status={resolutionStatus} resolution={resolution} decision={reviewDecision} onDecision={onReviewDecision} onRetry={onRetryResolution} disabled={importing || approvedPreview} />}<ReviewPreview product={scrapedProduct} approved={approvedPreview} onApprove={onApprove} alreadyRegistered={importGate.state === "already_registered"} onCancel={onCancelPreview} previewRef={previewRef} importing={importing} blocked={!importGate.canApprove} blockedReason={importGate.canApprove ? null : importGateMessage(importGate.reason)} /></div></div>}
   </div>;
 }
 
@@ -587,9 +630,54 @@ function DuplicateProductNotice({ product }: { product: ExistingCatalogProduct }
       {imageUrl ? <ImageWithState src={imageUrl} alt={product.name || "Produto já cadastrado"} /> : <span>Sem miniatura</span>}
     </div>
     <div className="duplicate-product-content">
-      <p className="eyebrow">Produto já cadastrado</p>
+      <p className="eyebrow">{productResolutionLabel("existing_listing")}</p>
       <h2>{product.name || "Produto sem nome"}</h2>
-      <p>Cadastrado em {createdAtLabel}.</p>
+      <p>Cadastrado em {createdAtLabel}. A importação está bloqueada porque este anúncio já pertence ao catálogo.</p>
+      <Link className="outline-button duplicate-product-link" href={`/admin/produtos/${product.id}`}>Abrir produto no catálogo</Link>
+    </div>
+  </section>;
+}
+
+function ResolutionNotice({ status, resolution, decision, onDecision, onRetry, disabled }: { status: ResolutionStatus; resolution: ProductResolutionView | null; decision: ProductImportDecision | null; onDecision: (decision: ProductImportDecision) => void; onRetry: () => void; disabled: boolean }) {
+  if (status === "loading") {
+    return <p className="resolution-status" role="status" aria-live="polite"><span className="progress-pulse" /> {importGateMessage("checking")}</p>;
+  }
+  if (status === "unavailable" || status === "error") {
+    return <div className="resolution-status" role="alert">
+      <p>{importGateMessage(status === "unavailable" ? "unavailable" : "refused")}</p>
+      <button type="button" className="outline-button" onClick={onRetry} disabled={disabled}>{IMPORT_RETRY_LABEL}</button>
+    </div>;
+  }
+  if (status === "conflict") {
+    return <p className="resolution-status" role="alert">{importGateMessage("conflict")}</p>;
+  }
+  if (status === "idle") {
+    return <p className="resolution-status" role="status">{importGateMessage("not_checked")}</p>;
+  }
+  if (resolution?.kind === "existing_listing" && !resolution.existing) {
+    return <p className="resolution-status" role="alert">{importGateMessage("already_registered")}</p>;
+  }
+  if (!resolution || resolution.kind === "new_product" || resolution.kind === "existing_listing" || !resolution.existing) return null;
+  const product = resolution.existing;
+  const imageUrl = product.main_image_url || product.primary_image_url || null;
+  const isReview = resolution.kind === "needs_review";
+  const evidence = resolution.matchedBy ? productMatchedByLabel(resolution.matchedBy) : null;
+  const attachSelected = decision?.kind === "attach";
+  const createSelected = decision?.kind === "create";
+  return <section className={`duplicate-product-notice resolution-notice ${isReview ? "needs-review" : "new-offer"}`} role={isReview ? "alert" : "status"} aria-label={productResolutionLabel(resolution.kind)}>
+    <div className="duplicate-product-media">
+      {imageUrl ? <ImageWithState src={imageUrl} alt={product.name || "Produto cadastrado"} /> : <span>Sem miniatura</span>}
+    </div>
+    <div className="duplicate-product-content">
+      <p className="eyebrow">{productResolutionLabel(resolution.kind)}</p>
+      <h2>{product.name || "Produto sem nome"}</h2>
+      {isReview
+        ? <p>Encontramos um produto parecido no catálogo{evidence ? ` (${evidence})` : ""}. Confirme se esta oferta é do mesmo produto antes de aprovar.</p>
+        : <p>Reconhecido por {evidence ?? "evidência da API"}. Ao aprovar, a oferta desta loja será adicionada a este produto; nenhum produto novo será criado.</p>}
+      {isReview && <div className="resolution-actions" role="group" aria-label="Decisão sobre o produto">
+        <button type="button" className={attachSelected ? "primary-button" : "outline-button"} aria-pressed={attachSelected} disabled={disabled} onClick={() => onDecision({ kind: "attach", productId: product.id })}>É o mesmo produto: adicionar oferta</button>
+        <button type="button" className={createSelected ? "primary-button" : "outline-button"} aria-pressed={createSelected} disabled={disabled} onClick={() => onDecision({ kind: "create" })}>É outro produto: cadastrar novo</button>
+      </div>}
       <Link className="outline-button duplicate-product-link" href={`/admin/produtos/${product.id}`}>Abrir produto no catálogo</Link>
     </div>
   </section>;
@@ -630,7 +718,7 @@ function canonicalGalleryImageKey(value: string): string {
   }
 }
 
-function ReviewPreview({ product, approved, onApprove, previewRef, importing, blocked }: { product: ProductPreview; approved: boolean; onApprove: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; blocked: boolean }) {
+function ReviewPreview({ product, approved, onApprove, alreadyRegistered, onCancel, previewRef, importing, blocked, blockedReason }: { product: ProductPreview; approved: boolean; onApprove: () => void; alreadyRegistered: boolean; onCancel: () => void; previewRef: RefObject<HTMLElement | null>; importing: boolean; blocked: boolean; blockedReason: string | null }) {
   const money = (value: number | null | undefined) =>
     value === null || value === undefined
       ? "—"
@@ -848,16 +936,25 @@ function ReviewPreview({ product, approved, onApprove, previewRef, importing, bl
         <span className="persistence-note">
           {approved
             ? "Importação concluída; o registro canônico e as relações foram confirmados."
+            : alreadyRegistered ? "Este produto já está no seu catálogo, então não há nada para importar. Cancele para encerrar a prévia e voltar ao link — nenhum cadastro será alterado."
+            : blocked && blockedReason ? blockedReason
             : "A loja será vinculada pelo domínio e criada junto do produto quando o catálogo estiver configurado."}
         </span>
-        <button
-          className="primary-button"
-          onClick={onApprove}
-          disabled={approved || importing || blocked}
-        >
-          <Icon name={importing ? "refresh" : "check"} />{" "}
-          {importing ? "Importando produto..." : approved ? "Prévia aprovada" : "Aprovar prévia"}
-        </button>
+        {alreadyRegistered && !approved ? (
+          <button className="primary-button" type="button" onClick={onCancel} disabled={importing}>
+            <Icon name="chevron-left" /> Cancelar
+          </button>
+        ) : (
+          <button
+            className="primary-button"
+            onClick={onApprove}
+            disabled={approved || importing || blocked}
+            aria-busy={importing}
+          >
+            <Icon name={importing ? "refresh" : "check"} />{" "}
+            {importing ? "Importando produto..." : approved ? "Prévia aprovada" : "Aprovar prévia"}
+          </button>
+        )}
       </div>
 
       <ImageViewer

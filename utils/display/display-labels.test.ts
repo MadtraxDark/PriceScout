@@ -5,7 +5,35 @@ import {
   matchRunStatusLabel,
   matchStoreStatusLabel,
   notificationTypeLabel,
+  productImportMessage,
+  productMatchedByLabel,
+  productResolutionLabel,
 } from "./index.ts";
+
+describe("productResolutionLabel / productMatchedByLabel", () => {
+  it("never renders raw resolution enums", () => {
+    for (const kind of ["existing_listing", "existing_product_new_listing", "needs_review", "new_product"]) {
+      const label = productResolutionLabel(kind);
+      assert.doesNotMatch(label, /_/);
+      assert.notEqual(label, kind);
+    }
+    for (const evidence of ["store_identity", "gtin", "identity", "user_confirmed"]) {
+      assert.doesNotMatch(productMatchedByLabel(evidence), /_/);
+    }
+  });
+
+  it("uses a neutral fallback for unknown values", () => {
+    assert.equal(productResolutionLabel("future_kind"), "Situação do cadastro desconhecida");
+    assert.equal(productMatchedByLabel("future_evidence"), "evidência não identificada");
+  });
+
+  it("import message follows the API resolution, not the presence of images", () => {
+    const withImages = { listingCreated: false, imagesQueued: 0, imagesTotal: 3 };
+    assert.match(productImportMessage("existing_listing", withImages), /já estava cadastrada/);
+    assert.match(productImportMessage("existing_product_new_listing", { ...withImages, listingCreated: true }), /adicionada ao produto existente/);
+    assert.match(productImportMessage("new_product", { listingCreated: true, imagesQueued: 3, imagesTotal: 3 }), /segundo plano/);
+  });
+});
 import { getStoreDisplayName } from "../store-display.ts";
 import { imageAvailabilityView } from "./image-availability.ts";
 
